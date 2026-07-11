@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.models.knowledge_base import KnowledgeBase
 
 
 class UserRole(StrEnum):
@@ -34,4 +40,7 @@ class User(Base):
         onupdate=func.now(),
         nullable=False,
     )
-
+    knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
