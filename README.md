@@ -28,10 +28,8 @@ This repository follows the 8-week development roadmap in `docs/development-road
 ## Local Development
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-uvicorn backend.app.main:app --reload
+make install
+make dev
 ```
 
 Health check:
@@ -43,21 +41,23 @@ curl http://localhost:8000/health
 ## Docker
 
 ```bash
-docker compose up --build
+make docker-up
+make docker-down
 ```
 
 ## Database Migrations
 
 ```bash
-alembic upgrade head
-alembic downgrade -1
-alembic current
+make migrate-up
+make migrate-down
+make migrate-current
 ```
 
 ## Quality Checks
 
 ```bash
-pytest
-ruff check .
-mypy backend
+make test
+make lint
+make typecheck
+make check
 ```

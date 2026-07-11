@@ -1,2 +1,1 @@
 """SQLAlchemy models package."""
-

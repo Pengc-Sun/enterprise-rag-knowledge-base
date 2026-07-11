@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
-    database_url: str = "postgresql+asyncpg://enterprise_rag:enterprise_rag@localhost:5432/enterprise_rag"
+    database_url: str = (
+        "postgresql+asyncpg://enterprise_rag:enterprise_rag@localhost:5432/enterprise_rag"
+    )
     database_echo: bool = False
     redis_url: str = "redis://localhost:6379/0"
     upload_dir: str = "storage/uploads"

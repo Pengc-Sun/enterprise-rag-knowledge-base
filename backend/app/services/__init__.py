@@ -1,2 +1,1 @@
 """Domain services package."""
-
