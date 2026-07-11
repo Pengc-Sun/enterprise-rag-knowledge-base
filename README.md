@@ -55,6 +55,16 @@ POST /api/v1/auth/login
 GET /api/v1/users/me
 ```
 
+Knowledge base endpoints:
+
+```text
+POST /api/v1/knowledge-bases
+GET /api/v1/knowledge-bases
+GET /api/v1/knowledge-bases/{knowledge_base_id}
+PATCH /api/v1/knowledge-bases/{knowledge_base_id}
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}
+```
+
 ## Docker
 
 ```bash
