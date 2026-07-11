@@ -6,3 +6,7 @@ class HealthData(BaseModel):
     service: str
     environment: str
 
+
+class DatabaseHealthData(BaseModel):
+    status: str
+    database: str

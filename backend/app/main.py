@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,15 +9,24 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import get_settings
 from backend.app.core.exceptions import http_exception_handler, validation_exception_handler
+from backend.app.db.session import dispose_db_engine
 from backend.app.schemas.health import HealthData
 from backend.app.schemas.response import APIResponse, success_response
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await dispose_db_engine()
+
+
 app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
