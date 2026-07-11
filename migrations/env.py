@@ -8,6 +8,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from backend.app import models  # noqa: F401
 from backend.app.core.config import get_settings
 from backend.app.db.base import Base
 
