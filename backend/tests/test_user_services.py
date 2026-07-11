@@ -12,6 +12,7 @@ from backend.app.services.users import (
     UsernameAlreadyRegisteredError,
     authenticate_user,
     build_user_for_create,
+    get_user_by_id,
 )
 
 
@@ -115,3 +116,18 @@ async def test_authenticate_user_rejects_invalid_password() -> None:
     user = await authenticate_user(session, "user@example.com", "wrong-password")
 
     assert user is None
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_id_returns_user() -> None:
+    existing_user = User(
+        id=uuid.uuid4(),
+        email="user@example.com",
+        username="user",
+        hashed_password="hashed",
+    )
+    session = cast(AsyncSession, FakeSession([existing_user]))
+
+    user = await get_user_by_id(session, existing_user.id)
+
+    assert user is existing_user
