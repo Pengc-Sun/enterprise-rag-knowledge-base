@@ -103,17 +103,17 @@ def test_list_knowledge_bases(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     knowledge_base = make_knowledge_base(user.id)
 
-    async def fake_list_knowledge_bases_for_owner(
+    async def fake_list_knowledge_bases_for_user(
         session: AsyncSession,
-        owner_id: uuid.UUID,
+        user_id: uuid.UUID,
     ) -> list[KnowledgeBase]:
-        assert owner_id == user.id
+        assert user_id == user.id
         return [knowledge_base]
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "list_knowledge_bases_for_owner",
-        fake_list_knowledge_bases_for_owner,
+        "list_knowledge_bases_for_user",
+        fake_list_knowledge_bases_for_user,
     )
     set_overrides(user)
 
@@ -134,19 +134,21 @@ def test_read_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     knowledge_base = make_knowledge_base(user.id)
 
-    async def fake_get_knowledge_base_for_owner(
+    async def fake_get_knowledge_base_for_user(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        owner_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
     ) -> KnowledgeBase:
         assert knowledge_base_id == knowledge_base.id
-        assert owner_id == user.id
+        assert user_id == user.id
+        assert "viewer" in allowed_permissions
         return knowledge_base
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_owner",
-        fake_get_knowledge_base_for_owner,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
     )
     set_overrides(user)
 
@@ -164,11 +166,14 @@ def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     knowledge_base = make_knowledge_base(user.id)
 
-    async def fake_get_knowledge_base_for_owner(
+    async def fake_get_knowledge_base_for_user(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        owner_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
     ) -> KnowledgeBase:
+        assert "editor" in allowed_permissions
+        assert "viewer" not in allowed_permissions
         return knowledge_base
 
     async def fake_update_knowledge_base(
@@ -183,8 +188,8 @@ def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_owner",
-        fake_get_knowledge_base_for_owner,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
     )
     monkeypatch.setattr(
         knowledge_base_endpoints,
@@ -214,11 +219,13 @@ def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     knowledge_base = make_knowledge_base(user.id)
     deleted = False
 
-    async def fake_get_knowledge_base_for_owner(
+    async def fake_get_knowledge_base_for_user(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        owner_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
     ) -> KnowledgeBase:
+        assert allowed_permissions == frozenset({"owner"})
         return knowledge_base
 
     async def fake_delete_knowledge_base(
@@ -230,8 +237,8 @@ def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_owner",
-        fake_get_knowledge_base_for_owner,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
     )
     monkeypatch.setattr(
         knowledge_base_endpoints,
@@ -257,17 +264,18 @@ def test_read_knowledge_base_returns_404_when_not_owned(
     user = make_user()
     knowledge_base_id = uuid.uuid4()
 
-    async def fake_get_knowledge_base_for_owner(
+    async def fake_get_knowledge_base_for_user(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        owner_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
     ) -> None:
         return None
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_owner",
-        fake_get_knowledge_base_for_owner,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
     )
     set_overrides(user)
 

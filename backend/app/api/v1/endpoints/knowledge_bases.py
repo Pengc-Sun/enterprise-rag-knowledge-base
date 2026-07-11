@@ -15,10 +15,13 @@ from backend.app.schemas.knowledge_base import (
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.knowledge_bases import (
+    OWNER_PERMISSIONS,
+    READ_PERMISSIONS,
+    WRITE_PERMISSIONS,
     create_knowledge_base,
     delete_knowledge_base,
-    get_knowledge_base_for_owner,
-    list_knowledge_bases_for_owner,
+    get_knowledge_base_for_user,
+    list_knowledge_bases_for_user,
     update_knowledge_base,
 )
 
@@ -47,7 +50,7 @@ async def list_knowledge_bases_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[list[KnowledgeBaseRead]]:
-    knowledge_bases = await list_knowledge_bases_for_owner(session, current_user.id)
+    knowledge_bases = await list_knowledge_bases_for_user(session, current_user.id)
     return success_response([KnowledgeBaseRead.model_validate(item) for item in knowledge_bases])
 
 
@@ -57,7 +60,12 @@ async def read_knowledge_base_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[KnowledgeBaseRead]:
-    knowledge_base = await get_knowledge_base_or_404(session, knowledge_base_id, current_user.id)
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        READ_PERMISSIONS,
+    )
     return success_response(KnowledgeBaseRead.model_validate(knowledge_base))
 
 
@@ -68,7 +76,12 @@ async def update_knowledge_base_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[KnowledgeBaseRead]:
-    knowledge_base = await get_knowledge_base_or_404(session, knowledge_base_id, current_user.id)
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        WRITE_PERMISSIONS,
+    )
     updated_knowledge_base = await update_knowledge_base(
         session,
         knowledge_base,
@@ -86,7 +99,12 @@ async def delete_knowledge_base_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
-    knowledge_base = await get_knowledge_base_or_404(session, knowledge_base_id, current_user.id)
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        OWNER_PERMISSIONS,
+    )
     await delete_knowledge_base(session, knowledge_base)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -94,9 +112,15 @@ async def delete_knowledge_base_endpoint(
 async def get_knowledge_base_or_404(
     session: AsyncSession,
     knowledge_base_id: uuid.UUID,
-    owner_id: uuid.UUID,
+    user_id: uuid.UUID,
+    allowed_permissions: frozenset[str],
 ) -> KnowledgeBase:
-    knowledge_base = await get_knowledge_base_for_owner(session, knowledge_base_id, owner_id)
+    knowledge_base = await get_knowledge_base_for_user(
+        session,
+        knowledge_base_id,
+        user_id,
+        allowed_permissions,
+    )
     if knowledge_base is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

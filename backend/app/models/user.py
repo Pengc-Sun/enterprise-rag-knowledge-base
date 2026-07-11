@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 if TYPE_CHECKING:
-    from backend.app.models.knowledge_base import KnowledgeBase
+    from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 
 
 class UserRole(StrEnum):
@@ -42,5 +42,9 @@ class User(Base):
     )
     knowledge_bases: Mapped[list[KnowledgeBase]] = relationship(
         back_populates="owner",
+        cascade="all, delete-orphan",
+    )
+    knowledge_base_memberships: Mapped[list[KnowledgeBaseMember]] = relationship(
+        back_populates="user",
         cascade="all, delete-orphan",
     )
