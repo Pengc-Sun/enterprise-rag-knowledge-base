@@ -46,6 +46,14 @@ curl http://localhost:8000/health
 docker compose up --build
 ```
 
+## Database Migrations
+
+```bash
+alembic upgrade head
+alembic downgrade -1
+alembic current
+```
+
 ## Quality Checks
 
 ```bash
@@ -53,4 +61,3 @@ pytest
 ruff check .
 mypy backend
 ```
-
