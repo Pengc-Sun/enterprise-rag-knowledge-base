@@ -29,3 +29,24 @@ export type RegisterPayload = {
   username: string;
   password: string;
 };
+
+
+export type KnowledgeBaseVisibility = 'private' | 'public';
+
+export type KnowledgeBase = {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string | null;
+  visibility: KnowledgeBaseVisibility;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeBasePayload = {
+  name: string;
+  description?: string | null;
+  visibility: KnowledgeBaseVisibility;
+};
+
+export type KnowledgeBaseUpdatePayload = Partial<KnowledgeBasePayload>;

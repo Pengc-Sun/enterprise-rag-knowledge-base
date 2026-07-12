@@ -39,6 +39,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     ...init,
     headers,
   });
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   const body = (await response.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!response.ok || body?.success === false) {

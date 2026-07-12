@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardPage } from './pages/DashboardPage';
+import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 
@@ -14,6 +15,22 @@ export function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/knowledge-bases"
+        element={
+          <ProtectedRoute>
+            <KnowledgeBasesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/knowledge-bases/:knowledgeBaseId"
+        element={
+          <ProtectedRoute>
+            <KnowledgeBasesPage />
           </ProtectedRoute>
         }
       />

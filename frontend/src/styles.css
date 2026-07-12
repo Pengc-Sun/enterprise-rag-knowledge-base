@@ -34,7 +34,9 @@ a:hover {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -108,7 +110,9 @@ h2 {
   font-weight: 700;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
   width: 100%;
   min-height: 46px;
   padding: 10px 12px;
@@ -119,13 +123,16 @@ h2 {
   outline: none;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
   border-color: #176b87;
   box-shadow: 0 0 0 3px rgb(23 107 135 / 16%);
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.danger-button {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -163,9 +170,34 @@ h2 {
   background: #f0f3f7;
 }
 
-.primary-button:disabled {
+.danger-button {
+  color: #8a1f1b;
+  background: #fff1ef;
+  border-color: #f0beb8;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #ffe4e0;
+}
+
+.primary-button:disabled,
+.danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+.inline-button {
+  width: fit-content;
+}
+
+.compact-button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.88rem;
+}
+
+.nav-button {
+  text-decoration: none;
 }
 
 .form-error {
@@ -271,7 +303,8 @@ code {
   gap: 10px;
 }
 
-.module-card span {
+.module-card span,
+.module-card a {
   width: fit-content;
   padding: 6px 10px;
   color: #543c00;
@@ -308,5 +341,179 @@ code {
 
   .status-band > div:last-child {
     border-bottom: 0;
+  }
+}
+
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-heading p {
+  margin-top: 4px;
+  color: #697386;
+  font-size: 0.9rem;
+}
+
+.kb-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.kb-sidebar,
+.kb-detail,
+.create-panel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.kb-list {
+  display: grid;
+  gap: 10px;
+}
+
+.kb-list-item {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  color: #283443;
+  background: #fbfcfe;
+  border: 1px solid #d9dee7;
+  border-radius: 7px;
+  text-decoration: none;
+}
+
+.kb-list-item:hover,
+.kb-list-item.active {
+  background: #edf7fa;
+  border-color: #8fc8d8;
+  text-decoration: none;
+}
+
+.kb-list-item span {
+  overflow: hidden;
+  color: #596171;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-list-item small,
+.visibility-badge {
+  width: fit-content;
+  padding: 4px 8px;
+  color: #315d4e;
+  background: #e8f5ef;
+  border: 1px solid #b9ddcd;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.detail-header div {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-header p,
+.empty-state,
+.empty-detail p {
+  color: #596171;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.metadata-grid div {
+  min-width: 0;
+  padding: 12px;
+  background: #f6f7f9;
+  border: 1px solid #dfe4ec;
+  border-radius: 7px;
+}
+
+.metadata-grid dt {
+  color: #697386;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metadata-grid dd {
+  min-width: 0;
+  margin: 4px 0 0;
+  color: #202936;
+}
+
+.resource-form {
+  display: grid;
+  gap: 16px;
+}
+
+.two-column-form {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  align-items: end;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.empty-detail {
+  display: grid;
+  min-height: 320px;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .kb-layout,
+  .two-column-form {
+    grid-template-columns: 1fr;
+  }
+
+  .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .detail-header,
+  .section-heading {
+    flex-direction: column;
+  }
+
+  .inline-button,
+  .compact-button,
+  .form-actions .danger-button {
+    width: 100%;
   }
 }

@@ -1,21 +1,24 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 const workspaceItems = [
   {
     title: 'Knowledge bases',
     description: 'Organize private corpora before document ingestion and retrieval tests.',
-    status: 'Ready for API wiring',
+    status: 'Manage',
+    path: '/knowledge-bases',
   },
   {
     title: 'Documents',
     description: 'Upload, parse, and track files after the authenticated file flow is connected.',
     status: 'Backend available',
+    path: null,
   },
   {
     title: 'Chat',
     description: 'Run retrieval-backed conversations once the vector search workflow is exposed.',
     status: 'Planned',
+    path: null,
   },
 ];
 
@@ -63,7 +66,7 @@ export function DashboardPage() {
               <h2>{item.title}</h2>
               <p>{item.description}</p>
             </div>
-            <span>{item.status}</span>
+            {item.path ? <Link to={item.path}>{item.status}</Link> : <span>{item.status}</span>}
           </article>
         ))}
       </section>
