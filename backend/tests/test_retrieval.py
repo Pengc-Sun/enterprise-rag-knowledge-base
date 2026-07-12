@@ -8,8 +8,10 @@ from backend.app.models.document import DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.retrieval import (
     RetrievalConfig,
+    build_keyword_search_statement,
     build_vector_search_statement,
     create_retrieval_config,
+    retrieve_keyword_chunks,
     retrieve_similar_chunks,
 )
 
@@ -101,6 +103,45 @@ def test_build_vector_search_statement_filters_and_orders() -> None:
     assert "LIMIT" in sql
 
 
+def test_build_keyword_search_statement_uses_postgresql_full_text_search() -> None:
+    knowledge_base_id = uuid.uuid4()
+
+    statement = build_keyword_search_statement(
+        knowledge_base_id=knowledge_base_id,
+        query="POLICY-2024-IT-07",
+        limit=10,
+    )
+    sql = compile_statement(statement)
+
+    assert "document_chunks.knowledge_base_id" in sql
+    assert "websearch_to_tsquery" in sql
+    assert "document_chunks.search_vector @@" in sql
+    assert "ts_rank_cd" in sql
+    assert "ORDER BY keyword_score DESC" in sql
+    assert "document_chunks.chunk_index ASC" in sql
+    assert "LIMIT" in sql
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "POLICY-2024-IT-07",
+        "A100-X9",
+        "ERR_AUTH_401",
+    ],
+)
+def test_build_keyword_search_statement_accepts_codes_policy_numbers_and_models(
+    query: str,
+) -> None:
+    statement = build_keyword_search_statement(
+        knowledge_base_id=uuid.uuid4(),
+        query=query,
+        limit=5,
+    )
+
+    assert "websearch_to_tsquery" in compile_statement(statement)
+
+
 @pytest.mark.asyncio
 async def test_retrieve_similar_chunks_embeds_query_and_returns_final_context() -> None:
     knowledge_base_id = uuid.uuid4()
@@ -124,6 +165,38 @@ async def test_retrieve_similar_chunks_embeds_query_and_returns_final_context() 
     assert session.statement is not None
     assert [item.chunk.chunk_index for item in retrieved_chunks] == [0, 1]
     assert [item.similarity_score for item in retrieved_chunks] == [0.9, 0.8]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_keyword_chunks_returns_keyword_scores() -> None:
+    knowledge_base_id = uuid.uuid4()
+    rows = [
+        (make_chunk(0, knowledge_base_id), 0.8),
+        (make_chunk(1, knowledge_base_id), 0.4),
+    ]
+    session = FakeSession(rows)
+
+    retrieved_chunks = await retrieve_keyword_chunks(
+        session,  # type: ignore[arg-type]
+        knowledge_base_id=knowledge_base_id,
+        query="A100-X9",
+        limit=5,
+    )
+
+    assert session.statement is not None
+    assert [item.chunk.chunk_index for item in retrieved_chunks] == [0, 1]
+    assert [item.keyword_score for item in retrieved_chunks] == [0.8, 0.4]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_keyword_chunks_rejects_invalid_limit() -> None:
+    with pytest.raises(ValueError):
+        await retrieve_keyword_chunks(
+            FakeSession([]),  # type: ignore[arg-type]
+            knowledge_base_id=uuid.uuid4(),
+            query="policy",
+            limit=0,
+        )
 
 
 def compile_statement(statement: Any) -> str:

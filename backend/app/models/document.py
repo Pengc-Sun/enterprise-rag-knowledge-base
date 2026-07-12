@@ -6,8 +6,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import BigInteger, Computed, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -100,6 +100,14 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVECTOR(),
+        Computed(
+            "to_tsvector('simple'::regconfig, coalesce(section_title, '') || ' ' || content)",
+            persisted=True,
+        ),
+        nullable=True,
+    )
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     embedding_status: Mapped[str] = mapped_column(
