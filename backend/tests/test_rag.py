@@ -14,7 +14,11 @@ from backend.app.services.rag import (
     build_source_citations,
 )
 from backend.app.services.rerankers import RerankedChunk, Reranker
-from backend.app.services.retrieval import HybridRetrievedChunk, RetrievalConfig
+from backend.app.services.retrieval import (
+    HybridRetrievedChunk,
+    RetrievalConfig,
+    RetrievalMetadataFilter,
+)
 
 
 class FakeEmbeddingProvider(EmbeddingProvider):
@@ -158,9 +162,14 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
         query: str,
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
+        metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[HybridRetrievedChunk]:
         assert query == "How does ingestion work about London?"
         assert config == RetrievalConfig(retrieval_top_k=10, final_context_k=2)
+        assert metadata_filter == RetrievalMetadataFilter(
+            file_types=("md",),
+            departments=("engineering",),
+        )
         return [
             HybridRetrievedChunk(chunk=chunk, rrf_score=0.1, vector_score=0.8) for chunk in chunks
         ]
@@ -184,6 +193,7 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
                 content="How does ingestion work?",
             )
         ],
+        metadata_filter=RetrievalMetadataFilter(file_types=("md",), departments=("engineering",)),
         temperature=0.2,
         max_tokens=512,
     )

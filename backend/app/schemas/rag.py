@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -11,9 +12,19 @@ class RAGQueryHistoryMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class RAGMetadataFilter(BaseModel):
+    document_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    file_types: list[str] = Field(default_factory=list, max_length=20)
+    created_after: datetime | None = None
+    created_before: datetime | None = None
+    departments: list[str] = Field(default_factory=list, max_length=20)
+    permissions: list[str] = Field(default_factory=list, max_length=20)
+
+
 class RAGQueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     history: list[RAGQueryHistoryMessage] = Field(default_factory=list, max_length=20)
+    filters: RAGMetadataFilter = Field(default_factory=RAGMetadataFilter)
 
 
 class RAGSourceCitationRead(BaseModel):

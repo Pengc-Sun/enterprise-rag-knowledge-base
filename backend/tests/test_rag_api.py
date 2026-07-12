@@ -19,6 +19,7 @@ from backend.app.services.llms import LLMProviderName
 from backend.app.services.query_rewriting import QueryRewriteResult
 from backend.app.services.rag import RAGAnswer, RAGSourceCitation
 from backend.app.services.rerankers import RerankedChunk
+from backend.app.services.retrieval import RetrievalMetadataFilter
 
 
 def make_user() -> User:
@@ -126,6 +127,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         retrieval_config: object,
         query_rewrite_config: object,
         history: object,
+        metadata_filter: object,
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -134,6 +136,12 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         assert question == "What about London?"
         assert query_rewrite_config is not None
         assert history is not None
+        assert metadata_filter == RetrievalMetadataFilter(
+            document_ids=(chunk.document_id,),
+            file_types=("md",),
+            departments=("engineering",),
+            permissions=("internal",),
+        )
         assert temperature == 0.2
         assert max_tokens == 1024
         return RAGAnswer(
@@ -203,6 +211,12 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             json={
                 "question": "What about London?",
                 "history": [{"role": "user", "content": "How does RAG work?"}],
+                "filters": {
+                    "document_ids": [str(chunk.document_id)],
+                    "file_types": ["md"],
+                    "departments": ["engineering"],
+                    "permissions": ["internal"],
+                },
             },
         )
     finally:

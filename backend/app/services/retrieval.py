@@ -1,12 +1,13 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models.document import ChunkEmbeddingStatus, DocumentChunk
+from backend.app.models.document import ChunkEmbeddingStatus, Document, DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 
 if TYPE_CHECKING:
@@ -34,6 +35,33 @@ class RetrievalConfig:
             raise ValueError("hybrid_candidate_top_k must be positive")
         if self.rrf_k <= 0:
             raise ValueError("rrf_k must be positive")
+
+
+@dataclass(frozen=True)
+class RetrievalMetadataFilter:
+    document_ids: tuple[uuid.UUID, ...] = field(default_factory=tuple)
+    file_types: tuple[str, ...] = field(default_factory=tuple)
+    created_after: datetime | None = None
+    created_before: datetime | None = None
+    departments: tuple[str, ...] = field(default_factory=tuple)
+    permissions: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if self.created_after and self.created_before and self.created_after > self.created_before:
+            raise ValueError("created_after cannot be later than created_before")
+
+    @property
+    def has_filters(self) -> bool:
+        return any(
+            (
+                self.document_ids,
+                self.file_types,
+                self.created_after,
+                self.created_before,
+                self.departments,
+                self.permissions,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -74,6 +102,7 @@ async def retrieve_similar_chunks(
     query: str,
     provider: EmbeddingProvider,
     config: RetrievalConfig | None = None,
+    metadata_filter: RetrievalMetadataFilter | None = None,
 ) -> list[RetrievedChunk]:
     effective_config = config or RetrievalConfig()
     query_embedding = await provider.embed_query(query)
@@ -83,6 +112,7 @@ async def retrieve_similar_chunks(
             knowledge_base_id=knowledge_base_id,
             query_embedding=query_embedding,
             limit=effective_config.retrieval_top_k,
+            metadata_filter=metadata_filter,
         )
     )
 
@@ -101,6 +131,7 @@ async def retrieve_keyword_chunks(
     knowledge_base_id: uuid.UUID,
     query: str,
     limit: int,
+    metadata_filter: RetrievalMetadataFilter | None = None,
 ) -> list[KeywordRetrievedChunk]:
     if limit <= 0:
         raise ValueError("limit must be positive")
@@ -110,6 +141,7 @@ async def retrieve_keyword_chunks(
             knowledge_base_id=knowledge_base_id,
             query=query,
             limit=limit,
+            metadata_filter=metadata_filter,
         )
     )
     return [
@@ -127,6 +159,7 @@ async def retrieve_hybrid_chunks(
     query: str,
     provider: EmbeddingProvider,
     config: RetrievalConfig | None = None,
+    metadata_filter: RetrievalMetadataFilter | None = None,
 ) -> list[HybridRetrievedChunk]:
     effective_config = config or RetrievalConfig()
     source_config = RetrievalConfig(
@@ -142,12 +175,14 @@ async def retrieve_hybrid_chunks(
         query=query,
         provider=provider,
         config=source_config,
+        metadata_filter=metadata_filter,
     )
     keyword_results = await retrieve_keyword_chunks(
         session=session,
         knowledge_base_id=knowledge_base_id,
         query=query,
         limit=effective_config.hybrid_source_top_k,
+        metadata_filter=metadata_filter,
     )
     return reciprocal_rank_fusion(
         vector_results=vector_results,
@@ -237,6 +272,7 @@ def build_vector_search_statement(
     knowledge_base_id: uuid.UUID,
     query_embedding: list[float],
     limit: int,
+    metadata_filter: RetrievalMetadataFilter | None = None,
 ) -> Select[tuple[DocumentChunk, float]]:
     distance = DocumentChunk.embedding.cosine_distance(query_embedding).label("distance")
     return (
@@ -246,6 +282,7 @@ def build_vector_search_statement(
             DocumentChunk.knowledge_base_id == knowledge_base_id,
             DocumentChunk.embedding.is_not(None),
             DocumentChunk.embedding_status == ChunkEmbeddingStatus.EMBEDDED.value,
+            *build_metadata_filter_conditions(metadata_filter),
         )
         .order_by(distance)
         .limit(limit)
@@ -256,6 +293,7 @@ def build_keyword_search_statement(
     knowledge_base_id: uuid.UUID,
     query: str,
     limit: int,
+    metadata_filter: RetrievalMetadataFilter | None = None,
 ) -> Select[tuple[DocumentChunk, float]]:
     ts_query = func.websearch_to_tsquery("simple", query)
     rank = func.ts_rank_cd(DocumentChunk.search_vector, ts_query).label("keyword_score")
@@ -265,7 +303,39 @@ def build_keyword_search_statement(
         .where(
             DocumentChunk.knowledge_base_id == knowledge_base_id,
             DocumentChunk.search_vector.op("@@")(ts_query),
+            *build_metadata_filter_conditions(metadata_filter),
         )
         .order_by(rank.desc(), DocumentChunk.chunk_index.asc())
         .limit(limit)
     )
+
+
+def build_metadata_filter_conditions(
+    metadata_filter: RetrievalMetadataFilter | None,
+) -> list[ColumnElement[bool]]:
+    if metadata_filter is None or not metadata_filter.has_filters:
+        return []
+
+    conditions: list[ColumnElement[bool]] = []
+    document_conditions: list[ColumnElement[bool]] = []
+
+    if metadata_filter.document_ids:
+        conditions.append(DocumentChunk.document_id.in_(metadata_filter.document_ids))
+    if metadata_filter.file_types:
+        document_conditions.append(Document.file_type.in_(metadata_filter.file_types))
+    if metadata_filter.created_after is not None:
+        document_conditions.append(Document.created_at >= metadata_filter.created_after)
+    if metadata_filter.created_before is not None:
+        document_conditions.append(Document.created_at <= metadata_filter.created_before)
+    if document_conditions:
+        conditions.append(DocumentChunk.document.has(and_(*document_conditions)))
+    if metadata_filter.departments:
+        conditions.append(
+            DocumentChunk.chunk_metadata["department"].astext.in_(metadata_filter.departments)
+        )
+    if metadata_filter.permissions:
+        conditions.append(
+            DocumentChunk.chunk_metadata["permission"].astext.in_(metadata_filter.permissions)
+        )
+
+    return conditions

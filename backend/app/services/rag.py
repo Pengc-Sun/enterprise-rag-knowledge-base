@@ -13,7 +13,11 @@ from backend.app.services.query_rewriting import (
     rewrite_query,
 )
 from backend.app.services.rerankers import RerankedChunk, Reranker
-from backend.app.services.retrieval import RetrievalConfig, retrieve_hybrid_chunks
+from backend.app.services.retrieval import (
+    RetrievalConfig,
+    RetrievalMetadataFilter,
+    retrieve_hybrid_chunks,
+)
 
 SYSTEM_PROMPT = (
     "You are an enterprise knowledge base assistant. Answer only from the provided "
@@ -51,6 +55,7 @@ async def answer_knowledge_base_question(
     retrieval_config: RetrievalConfig,
     query_rewrite_config: QueryRewriteConfig | None = None,
     history: list[QueryRewriteMessage] | None = None,
+    metadata_filter: RetrievalMetadataFilter | None = None,
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
@@ -63,6 +68,7 @@ async def answer_knowledge_base_question(
         query=retrieval_query,
         provider=embedding_provider,
         config=retrieval_config,
+        metadata_filter=metadata_filter,
     )
     retrieved_chunks = await reranker.rerank(
         query=retrieval_query,

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -9,6 +10,7 @@ from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.retrieval import (
     KeywordRetrievedChunk,
     RetrievalConfig,
+    RetrievalMetadataFilter,
     RetrievedChunk,
     build_keyword_search_statement,
     build_vector_search_statement,
@@ -107,6 +109,42 @@ def test_create_retrieval_config_uses_settings() -> None:
     assert config.hybrid_source_top_k == 20
     assert config.hybrid_candidate_top_k == 10
     assert config.rrf_k == 50
+
+
+def test_retrieval_metadata_filter_rejects_invalid_date_range() -> None:
+    with pytest.raises(ValueError, match="created_after cannot be later than created_before"):
+        RetrievalMetadataFilter(
+            created_after=datetime(2026, 2, 1, tzinfo=UTC),
+            created_before=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+
+def test_build_vector_search_statement_applies_metadata_filters() -> None:
+    knowledge_base_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+
+    statement = build_vector_search_statement(
+        knowledge_base_id=knowledge_base_id,
+        query_embedding=[1.0, 0.0, 0.0],
+        limit=10,
+        metadata_filter=RetrievalMetadataFilter(
+            document_ids=(document_id,),
+            file_types=("pdf",),
+            created_after=datetime(2026, 1, 1, tzinfo=UTC),
+            created_before=datetime(2026, 1, 31, tzinfo=UTC),
+            departments=("legal",),
+            permissions=("internal",),
+        ),
+    )
+    sql = compile_statement(statement)
+
+    assert "document_chunks.document_id IN" in sql
+    assert "EXISTS" in sql
+    assert "documents.file_type IN" in sql
+    assert "documents.created_at >= " in sql
+    assert "documents.created_at <= " in sql
+    assert "document_chunks.metadata" in sql
+    assert "->>" in sql
 
 
 def test_build_vector_search_statement_filters_and_orders() -> None:
@@ -325,6 +363,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
         query: str,
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
+        metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[RetrievedChunk]:
         calls.append("vector")
         assert query == "POLICY-2024-IT-07"
@@ -335,6 +374,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
             hybrid_candidate_top_k=2,
             rrf_k=60,
         )
+        assert metadata_filter == RetrievalMetadataFilter(file_types=("md",))
         return [RetrievedChunk(chunk=vector_chunk, similarity_score=0.9)]
 
     async def fake_retrieve_keyword_chunks(
@@ -342,10 +382,12 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
         knowledge_base_id: uuid.UUID,
         query: str,
         limit: int,
+        metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[KeywordRetrievedChunk]:
         calls.append("keyword")
         assert query == "POLICY-2024-IT-07"
         assert limit == 4
+        assert metadata_filter == RetrievalMetadataFilter(file_types=("md",))
         return [KeywordRetrievedChunk(chunk=keyword_chunk, keyword_score=0.7)]
 
     monkeypatch.setattr(
@@ -369,6 +411,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
             hybrid_candidate_top_k=2,
             rrf_k=60,
         ),
+        metadata_filter=RetrievalMetadataFilter(file_types=("md",)),
     )
 
     assert calls == ["vector", "keyword"]

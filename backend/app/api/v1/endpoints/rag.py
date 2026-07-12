@@ -19,7 +19,7 @@ from backend.app.services.query_rewriting import (
 )
 from backend.app.services.rag import answer_knowledge_base_question
 from backend.app.services.rerankers import RerankerError, create_reranker
-from backend.app.services.retrieval import create_retrieval_config
+from backend.app.services.retrieval import RetrievalMetadataFilter, create_retrieval_config
 
 router = APIRouter(prefix="/knowledge-bases/{knowledge_base_id}/query", tags=["rag"])
 
@@ -58,6 +58,14 @@ async def query_knowledge_base_endpoint(
                 QueryRewriteMessage(role=item.role, content=item.content)
                 for item in query_request.history
             ],
+            metadata_filter=RetrievalMetadataFilter(
+                document_ids=tuple(query_request.filters.document_ids),
+                file_types=tuple(query_request.filters.file_types),
+                created_after=query_request.filters.created_after,
+                created_before=query_request.filters.created_before,
+                departments=tuple(query_request.filters.departments),
+                permissions=tuple(query_request.filters.permissions),
+            ),
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
