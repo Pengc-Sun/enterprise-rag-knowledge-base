@@ -6,6 +6,7 @@ import pytest
 from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.schemas.conversation import ConversationCreate, ConversationUpdate, MessageCreate
 from backend.app.services.conversations import (
+    build_query_rewrite_history,
     create_conversation,
     create_message,
     delete_conversation,
@@ -120,3 +121,51 @@ async def test_create_message_persists_sources_and_metrics() -> None:
     assert message.sources == [{"document_name": "policy.md"}]
     assert message.token_usage == {"completion_tokens": 18}
     assert message.latency_ms == 120
+
+
+def test_build_query_rewrite_history_limits_recent_user_and_assistant_messages() -> None:
+    conversation = make_conversation()
+    messages = [
+        Message(
+            id=uuid.uuid4(),
+            conversation_id=conversation.id,
+            role=MessageRole.SYSTEM.value,
+            content="system note",
+            sources=[],
+        ),
+        Message(
+            id=uuid.uuid4(),
+            conversation_id=conversation.id,
+            role=MessageRole.USER.value,
+            content="What is the travel policy?",
+            sources=[],
+        ),
+        Message(
+            id=uuid.uuid4(),
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT.value,
+            content="It covers business travel.",
+            sources=[],
+        ),
+        Message(
+            id=uuid.uuid4(),
+            conversation_id=conversation.id,
+            role=MessageRole.USER.value,
+            content="What about London?",
+            sources=[],
+        ),
+    ]
+
+    history = build_query_rewrite_history(messages, limit=3)
+
+    assert [item.role for item in history] == ["user", "assistant", "user"]
+    assert [item.content for item in history] == [
+        "What is the travel policy?",
+        "It covers business travel.",
+        "What about London?",
+    ]
+
+
+def test_build_query_rewrite_history_rejects_invalid_limit() -> None:
+    with pytest.raises(ValueError, match="conversation_context_limit must be positive"):
+        build_query_rewrite_history([], limit=0)

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     query_rewrite_enabled: bool = True
     query_rewrite_history_limit: int = 6
+    conversation_context_limit: int = 10
     reranker_provider: str = "deterministic"
     reranker_model: str = "deterministic-cross-encoder"
     llm_provider: str = "deterministic"

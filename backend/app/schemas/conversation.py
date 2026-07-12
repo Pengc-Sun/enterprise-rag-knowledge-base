@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.models.conversation import MessageRole
+from backend.app.schemas.rag import RAGMetadataFilter, RAGSourceCitationRead
 
 
 class ConversationCreate(BaseModel):
@@ -44,3 +45,23 @@ class MessageRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    filters: RAGMetadataFilter = Field(default_factory=RAGMetadataFilter)
+
+
+class ConversationChatResponse(BaseModel):
+    conversation_id: uuid.UUID
+    user_message_id: uuid.UUID
+    assistant_message_id: uuid.UUID
+    answer: str
+    rewritten_question: str
+    question_was_rewritten: bool
+    model: str
+    provider: str
+    context_message_count: int
+    context_chunk_count: int
+    context_chunk_ids: list[uuid.UUID]
+    sources: list[RAGSourceCitationRead]

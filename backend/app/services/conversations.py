@@ -1,11 +1,13 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models.conversation import Conversation, Message
+from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.schemas.conversation import ConversationCreate, ConversationUpdate, MessageCreate
+from backend.app.services.query_rewriting import QueryMessageRole, QueryRewriteMessage
 
 
 async def create_conversation(
@@ -91,6 +93,7 @@ async def create_message(
         token_usage=message_create.token_usage,
         latency_ms=message_create.latency_ms,
     )
+    conversation.updated_at = datetime.now(UTC)
     session.add(message)
     await session.commit()
     await session.refresh(message)
@@ -108,3 +111,22 @@ async def list_messages_for_conversation(
         .order_by(Message.created_at.asc(), Message.id.asc())
     )
     return list(result.scalars().all())
+
+
+def build_query_rewrite_history(
+    messages: list[Message],
+    limit: int,
+) -> list[QueryRewriteMessage]:
+    if limit <= 0:
+        raise ValueError("conversation_context_limit must be positive")
+
+    recent_messages = messages[-limit:]
+    history: list[QueryRewriteMessage] = []
+    for message in recent_messages:
+        if message.role == MessageRole.USER.value:
+            history.append(QueryRewriteMessage(role=QueryMessageRole.USER, content=message.content))
+        elif message.role == MessageRole.ASSISTANT.value:
+            history.append(
+                QueryRewriteMessage(role=QueryMessageRole.ASSISTANT, content=message.content)
+            )
+    return history
