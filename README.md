@@ -4,7 +4,10 @@ Enterprise-oriented Retrieval-Augmented Generation knowledge base system.
 
 This repository follows the 8-week development roadmap in `docs/development-roadmap.md`.
 
-Current status: Week 1 backend foundation is complete. See `docs/development-log/week-1.md`.
+Current status: Week 2 authentication and knowledge base permissions are complete. See:
+
+- `docs/development-log/week-1.md`
+- `docs/development-log/week-2.md`
 
 ## Goals
 
@@ -96,4 +99,14 @@ make check
 - `/api/v1/health/database` validates PostgreSQL connectivity
 - Swagger is available at `/docs`
 - Alembic upgrade and downgrade are verified
+- Pytest, Ruff, and mypy pass through `make check`
+
+## Week 2 Acceptance Status
+
+- Users can register and log in
+- JWT authentication works
+- `/api/v1/users/me` returns the authenticated user
+- Users can create knowledge bases
+- Knowledge base owner/editor/viewer permissions are enforced
+- Unauthorized users cannot access private knowledge bases
 - Pytest, Ruff, and mypy pass through `make check`
