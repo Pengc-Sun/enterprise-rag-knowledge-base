@@ -12,7 +12,8 @@ from backend.app.services.rag import (
     build_rag_messages,
     build_source_citations,
 )
-from backend.app.services.retrieval import RetrievalConfig
+from backend.app.services.rerankers import RerankedChunk, Reranker
+from backend.app.services.retrieval import HybridRetrievedChunk, RetrievalConfig
 
 
 class FakeEmbeddingProvider(EmbeddingProvider):
@@ -45,6 +46,31 @@ class FakeLLMProvider(LLMProvider):
             model="test-chat",
             provider=LLMProviderName.DETERMINISTIC,
         )
+
+
+class FakeReranker(Reranker):
+    def __init__(self) -> None:
+        self.query: str | None = None
+        self.limit: int | None = None
+
+    async def rerank(
+        self,
+        query: str,
+        candidates: list[HybridRetrievedChunk],
+        limit: int,
+    ) -> list[RerankedChunk]:
+        self.query = query
+        self.limit = limit
+        return [
+            RerankedChunk(
+                chunk=candidate.chunk,
+                rerank_score=0.95 - index,
+                rrf_score=candidate.rrf_score,
+                vector_score=candidate.vector_score,
+                keyword_score=candidate.keyword_score,
+            )
+            for index, candidate in enumerate(candidates[:limit])
+        ]
 
 
 def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
@@ -95,12 +121,10 @@ def test_build_context_formats_chunk_locations() -> None:
 
 
 def test_build_source_citations_returns_document_metadata() -> None:
-    from backend.app.services.retrieval import RetrievedChunk
-
     knowledge_base_id = uuid.uuid4()
     chunk = make_chunk(0, knowledge_base_id)
 
-    sources = build_source_citations([RetrievedChunk(chunk=chunk, similarity_score=0.83)])
+    sources = build_source_citations([RerankedChunk(chunk=chunk, rerank_score=0.83, rrf_score=0.1)])
 
     assert len(sources) == 1
     assert sources[0].document_name == "handbook-0.md"
@@ -125,23 +149,24 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
     knowledge_base_id = uuid.uuid4()
     chunks = [make_chunk(0, knowledge_base_id), make_chunk(1, knowledge_base_id)]
     llm_provider = FakeLLMProvider()
+    reranker = FakeReranker()
 
-    async def fake_retrieve_similar_chunks(
+    async def fake_retrieve_hybrid_chunks(
         session: object,
         knowledge_base_id: uuid.UUID,
         query: str,
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
-    ) -> list[object]:
-        from backend.app.services.retrieval import RetrievedChunk
-
+    ) -> list[HybridRetrievedChunk]:
         assert query == "How does ingestion work?"
         assert config == RetrievalConfig(retrieval_top_k=10, final_context_k=2)
-        return [RetrievedChunk(chunk=chunk, similarity_score=0.9) for chunk in chunks]
+        return [
+            HybridRetrievedChunk(chunk=chunk, rrf_score=0.1, vector_score=0.8) for chunk in chunks
+        ]
 
     monkeypatch.setattr(
-        "backend.app.services.rag.retrieve_similar_chunks",
-        fake_retrieve_similar_chunks,
+        "backend.app.services.rag.retrieve_hybrid_chunks",
+        fake_retrieve_hybrid_chunks,
     )
 
     answer = await answer_knowledge_base_question(
@@ -150,6 +175,7 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
         question="How does ingestion work?",
         embedding_provider=FakeEmbeddingProvider(),
         llm_provider=llm_provider,
+        reranker=reranker,
         retrieval_config=RetrievalConfig(retrieval_top_k=10, final_context_k=2),
         temperature=0.2,
         max_tokens=512,
@@ -160,7 +186,9 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
     assert len(answer.context_chunks) == 2
     assert [source.document_name for source in answer.sources] == ["handbook-0.md", "handbook-1.md"]
     assert answer.sources[0].original_text == "context body 0"
-    assert answer.sources[0].similarity_score == 0.9
+    assert answer.sources[0].similarity_score == 0.95
+    assert reranker.query == "How does ingestion work?"
+    assert reranker.limit == 2
     assert "context body 0" in llm_provider.messages[1].content
     assert "How does ingestion work?" in llm_provider.messages[1].content
     assert llm_provider.temperature == 0.2

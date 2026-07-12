@@ -14,6 +14,7 @@ from backend.app.services.embeddings import EmbeddingProviderError, create_embed
 from backend.app.services.knowledge_bases import READ_PERMISSIONS, get_knowledge_base_for_user
 from backend.app.services.llms import LLMProviderError, create_llm_provider
 from backend.app.services.rag import answer_knowledge_base_question
+from backend.app.services.rerankers import RerankerError, create_reranker
 from backend.app.services.retrieval import create_retrieval_config
 
 router = APIRouter(prefix="/knowledge-bases/{knowledge_base_id}/query", tags=["rag"])
@@ -46,11 +47,12 @@ async def query_knowledge_base_endpoint(
             question=query_request.question,
             embedding_provider=create_embedding_provider(settings),
             llm_provider=create_llm_provider(settings),
+            reranker=create_reranker(settings),
             retrieval_config=create_retrieval_config(settings),
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
-    except (EmbeddingProviderError, LLMProviderError, ValueError) as exc:
+    except (EmbeddingProviderError, LLMProviderError, RerankerError, ValueError) as exc:
         message = getattr(exc, "message", "RAG query failed")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
 

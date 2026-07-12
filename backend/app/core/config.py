@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     hybrid_source_top_k: int = 20
     hybrid_candidate_top_k: int = 10
     rrf_k: int = 60
+    reranker_provider: str = "deterministic"
+    reranker_model: str = "deterministic-cross-encoder"
     llm_provider: str = "deterministic"
     llm_model: str = "deterministic-chat"
     llm_api_key: str | None = None

@@ -17,7 +17,7 @@ from backend.app.models.user import User, UserRole
 from backend.app.services.embeddings import EmbeddingProviderConfigurationError
 from backend.app.services.llms import LLMProviderName
 from backend.app.services.rag import RAGAnswer, RAGSourceCitation
-from backend.app.services.retrieval import RetrievedChunk
+from backend.app.services.rerankers import RerankedChunk
 
 
 def make_user() -> User:
@@ -121,6 +121,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         question: str,
         embedding_provider: object,
         llm_provider: object,
+        reranker: object,
         retrieval_config: object,
         *,
         temperature: float | None = None,
@@ -134,7 +135,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             answer="Use retrieval then generation.",
             model="deterministic-chat",
             provider=LLMProviderName.DETERMINISTIC,
-            context_chunks=[RetrievedChunk(chunk=chunk, similarity_score=0.9)],
+            context_chunks=[RerankedChunk(chunk=chunk, rerank_score=0.9, rrf_score=0.1)],
             sources=[
                 RAGSourceCitation(
                     document_name="architecture.md",
@@ -170,6 +171,8 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             hybrid_source_top_k=20,
             hybrid_candidate_top_k=10,
             rrf_k=60,
+            reranker_provider="deterministic",
+            reranker_model="deterministic-cross-encoder",
             llm_provider="deterministic",
             llm_model="deterministic-chat",
             llm_api_key=None,
@@ -279,6 +282,8 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
             hybrid_source_top_k=20,
             hybrid_candidate_top_k=10,
             rrf_k=60,
+            reranker_provider="deterministic",
+            reranker_model="deterministic-cross-encoder",
             llm_provider="deterministic",
             llm_model="deterministic-chat",
             llm_api_key=None,

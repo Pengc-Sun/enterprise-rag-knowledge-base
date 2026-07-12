@@ -6,11 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.document import DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.llms import LLMMessage, LLMProvider, LLMProviderName
-from backend.app.services.retrieval import (
-    RetrievalConfig,
-    RetrievedChunk,
-    retrieve_similar_chunks,
-)
+from backend.app.services.rerankers import RerankedChunk, Reranker
+from backend.app.services.retrieval import RetrievalConfig, retrieve_hybrid_chunks
 
 SYSTEM_PROMPT = (
     "You are an enterprise knowledge base assistant. Answer only from the provided "
@@ -33,7 +30,7 @@ class RAGAnswer:
     answer: str
     model: str
     provider: LLMProviderName
-    context_chunks: list[RetrievedChunk]
+    context_chunks: list[RerankedChunk]
     sources: list[RAGSourceCitation]
 
 
@@ -43,17 +40,23 @@ async def answer_knowledge_base_question(
     question: str,
     embedding_provider: EmbeddingProvider,
     llm_provider: LLMProvider,
+    reranker: Reranker,
     retrieval_config: RetrievalConfig,
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> RAGAnswer:
-    retrieved_chunks = await retrieve_similar_chunks(
+    candidate_chunks = await retrieve_hybrid_chunks(
         session=session,
         knowledge_base_id=knowledge_base_id,
         query=question,
         provider=embedding_provider,
         config=retrieval_config,
+    )
+    retrieved_chunks = await reranker.rerank(
+        query=question,
+        candidates=candidate_chunks,
+        limit=retrieval_config.final_context_k,
     )
     messages = build_rag_messages(question, [item.chunk for item in retrieved_chunks])
     llm_response = await llm_provider.generate(
@@ -70,14 +73,14 @@ async def answer_knowledge_base_question(
     )
 
 
-def build_source_citations(retrieved_chunks: list[RetrievedChunk]) -> list[RAGSourceCitation]:
+def build_source_citations(retrieved_chunks: list[RerankedChunk]) -> list[RAGSourceCitation]:
     return [
         RAGSourceCitation(
             document_name=item.chunk.document.filename,
             page_number=item.chunk.page_number,
             chunk_id=item.chunk.id,
             original_text=item.chunk.content,
-            similarity_score=item.similarity_score,
+            similarity_score=item.rerank_score,
         )
         for item in retrieved_chunks
     ]
