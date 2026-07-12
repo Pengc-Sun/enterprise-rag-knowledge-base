@@ -20,6 +20,7 @@ from backend.app.services.query_rewriting import QueryRewriteResult
 from backend.app.services.rag import RAGAnswer, RAGSourceCitation
 from backend.app.services.rerankers import RerankedChunk
 from backend.app.services.retrieval import RetrievalMetadataFilter
+from backend.app.services.retrieval_debug import RetrievalDebugCandidate, RetrievalDebugResult
 
 
 def make_user() -> User:
@@ -238,6 +239,135 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             "chunk_id": str(chunk.id),
             "original_text": "context body",
             "similarity_score": 0.9,
+        }
+    ]
+
+
+def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    chunk = make_chunk(knowledge_base.id)
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        assert knowledge_base_id == knowledge_base.id
+        assert user_id == user.id
+        assert "viewer" in allowed_permissions
+        return knowledge_base
+
+    async def fake_debug_knowledge_base_retrieval(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        question: str,
+        embedding_provider: object,
+        reranker: object,
+        retrieval_config: object,
+        query_rewrite_config: object,
+        history: object,
+        metadata_filter: object,
+    ) -> RetrievalDebugResult:
+        assert knowledge_base_id == knowledge_base.id
+        assert question == "What about London?"
+        assert query_rewrite_config is not None
+        assert history is not None
+        assert metadata_filter == RetrievalMetadataFilter(file_types=("md",))
+        return RetrievalDebugResult(
+            query_rewrite=QueryRewriteResult(
+                original_query="What about London?",
+                rewritten_query="How does RAG work about London?",
+                was_rewritten=True,
+            ),
+            candidates=[
+                RetrievalDebugCandidate(
+                    chunk_id=chunk.id,
+                    document_id=chunk.document_id,
+                    document_name="architecture.md",
+                    chunk_index=0,
+                    page_number=1,
+                    section_title=None,
+                    content_preview="context body",
+                    vector_rank=2,
+                    keyword_rank=1,
+                    vector_score=0.7,
+                    keyword_score=0.9,
+                    rrf_score=0.04,
+                    rerank_score=0.95,
+                    final_rank=1,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        rag_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        rag_endpoints,
+        "debug_knowledge_base_retrieval",
+        fake_debug_knowledge_base_retrieval,
+    )
+    monkeypatch.setattr(
+        rag_endpoints,
+        "get_settings",
+        lambda: SimpleNamespace(
+            embedding_provider="deterministic",
+            embedding_dimension=1536,
+            embedding_model="deterministic-hash",
+            embedding_api_key=None,
+            embedding_base_url=None,
+            retrieval_top_k=10,
+            final_context_k=4,
+            query_rewrite_enabled=True,
+            query_rewrite_history_limit=6,
+            hybrid_source_top_k=20,
+            hybrid_candidate_top_k=10,
+            rrf_k=60,
+            reranker_provider="deterministic",
+            reranker_model="deterministic-cross-encoder",
+        ),
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query/debug",
+            json={
+                "question": "What about London?",
+                "history": [{"role": "user", "content": "How does RAG work?"}],
+                "filters": {"file_types": ["md"]},
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["rewritten_question"] == "How does RAG work about London?"
+    assert body["data"]["question_was_rewritten"] is True
+    assert body["data"]["candidate_count"] == 1
+    assert body["data"]["candidates"] == [
+        {
+            "chunk_id": str(chunk.id),
+            "document_id": str(chunk.document_id),
+            "document_name": "architecture.md",
+            "chunk_index": 0,
+            "page_number": 1,
+            "section_title": None,
+            "content_preview": "context body",
+            "vector_rank": 2,
+            "keyword_rank": 1,
+            "vector_score": 0.7,
+            "keyword_score": 0.9,
+            "rrf_score": 0.04,
+            "rerank_score": 0.95,
+            "final_rank": 1,
         }
     ]
 

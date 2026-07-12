@@ -44,3 +44,28 @@ class RAGQueryResponse(BaseModel):
     context_chunk_count: int
     context_chunk_ids: list[uuid.UUID]
     sources: list[RAGSourceCitationRead]
+
+
+class RAGRetrievalDebugCandidateRead(BaseModel):
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_name: str
+    chunk_index: int
+    page_number: int
+    section_title: str | None
+    content_preview: str
+    vector_rank: int | None
+    keyword_rank: int | None
+    vector_score: float | None
+    keyword_score: float | None
+    rrf_score: float
+    rerank_score: float
+    final_rank: int
+
+
+class RAGRetrievalDebugResponse(BaseModel):
+    original_question: str
+    rewritten_question: str
+    question_was_rewritten: bool
+    candidate_count: int
+    candidates: list[RAGRetrievalDebugCandidateRead]
