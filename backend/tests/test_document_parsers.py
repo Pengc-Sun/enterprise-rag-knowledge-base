@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from docx import Document as DocxDocument
 
 from backend.app.models.document import Document
 from backend.app.services.document_parsers import (
@@ -108,10 +109,62 @@ def test_parse_document_rejects_missing_file(tmp_path: Path) -> None:
         parse_document(document)
 
 
-def test_parse_document_rejects_unsupported_file_type(tmp_path: Path) -> None:
+def test_parse_markdown_document_extracts_headings_and_normalizes_text(tmp_path: Path) -> None:
     path = tmp_path / "notes.md"
-    path.write_text("# Heading", encoding="utf-8")
+    path.write_text(
+        "# Product Plan\r\n\r\nSome   text\n\n\n## Risks ##\n- Item",
+        encoding="utf-8",
+    )
     document = make_document(path, "md")
+
+    parsed_document = parse_document(document)
+
+    assert parsed_document.pages[0].page_number == 1
+    assert parsed_document.pages[0].text == "Product Plan\n\nSome text\n\nRisks\n- Item"
+    assert [(heading.level, heading.text) for heading in parsed_document.headings] == [
+        (1, "Product Plan"),
+        (2, "Risks"),
+    ]
+
+
+def test_parse_markdown_alias_document(tmp_path: Path) -> None:
+    path = tmp_path / "notes.markdown"
+    path.write_text("# Handbook", encoding="utf-8")
+    document = make_document(path, "markdown")
+
+    parsed_document = parse_document(document)
+
+    assert parsed_document.file_type == "markdown"
+    assert parsed_document.pages[0].text == "Handbook"
+    assert parsed_document.headings[0].text == "Handbook"
+
+
+def test_parse_docx_document_extracts_headings_and_normalizes_text(tmp_path: Path) -> None:
+    path = tmp_path / "handbook.docx"
+    docx_document = DocxDocument()
+    docx_document.add_heading("Engineering Handbook", level=1)
+    docx_document.add_paragraph("First   paragraph")
+    docx_document.add_heading("Operations", level=2)
+    docx_document.add_paragraph("Second paragraph")
+    docx_document.save(str(path))
+    document = make_document(path, "docx")
+
+    parsed_document = parse_document(document)
+
+    assert parsed_document.pages[0].page_number == 1
+    assert parsed_document.pages[0].text == (
+        "Engineering Handbook\nFirst paragraph\nOperations\nSecond paragraph"
+    )
+    assert [(heading.level, heading.text) for heading in parsed_document.headings] == [
+        (1, "Engineering Handbook"),
+        (2, "Operations"),
+    ]
+
+
+def test_parse_document_rejects_unsupported_file_type(tmp_path: Path) -> None:
+    path = tmp_path / "notes.html"
+    path.write_text("<h1>Heading</h1>", encoding="utf-8")
+    document = make_document(path, "html")
 
     with pytest.raises(UnsupportedDocumentTypeError):
         parse_document(document)
@@ -130,6 +183,15 @@ def test_parse_pdf_document_wraps_parser_errors(tmp_path: Path) -> None:
     path = tmp_path / "bad.pdf"
     path.write_bytes(b"not a pdf")
     document = make_document(path, "pdf")
+
+    with pytest.raises(DocumentParsingError):
+        parse_document(document)
+
+
+def test_parse_docx_document_wraps_parser_errors(tmp_path: Path) -> None:
+    path = tmp_path / "bad.docx"
+    path.write_bytes(b"not a docx")
+    document = make_document(path, "docx")
 
     with pytest.raises(DocumentParsingError):
         parse_document(document)
