@@ -1,6 +1,6 @@
 import uuid
 
-from backend.app.models.document import Document, DocumentStatus
+from backend.app.models.document import Document, DocumentChunk, DocumentStatus
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
 
@@ -42,3 +42,43 @@ def test_document_relationships() -> None:
     assert document in knowledge_base.documents
     assert document in user.documents
     assert document.status == "uploaded"
+
+
+def test_document_chunk_relationship() -> None:
+    user = User(
+        id=uuid.uuid4(),
+        email="chunker@example.com",
+        username="chunker",
+        hashed_password="hashed",
+    )
+    knowledge_base = KnowledgeBase(
+        id=uuid.uuid4(),
+        name="Engineering Handbook",
+        owner=user,
+    )
+    document = Document(
+        id=uuid.uuid4(),
+        knowledge_base=knowledge_base,
+        filename="architecture.pdf",
+        file_type="pdf",
+        file_size=2048,
+        file_hash="sha256:architecture",
+        storage_path="knowledge-bases/engineering/architecture.pdf",
+        status=DocumentStatus.UPLOADED.value,
+        creator=user,
+    )
+    chunk = DocumentChunk(
+        document=document,
+        knowledge_base_id=knowledge_base.id,
+        content="Architecture overview",
+        chunk_index=0,
+        page_number=1,
+        section_title="Overview",
+        token_count=2,
+        chunk_metadata={"file_type": "pdf"},
+    )
+
+    assert chunk.document is document
+    assert chunk in document.chunks
+    assert chunk.knowledge_base_id == knowledge_base.id
+    assert chunk.chunk_metadata == {"file_type": "pdf"}

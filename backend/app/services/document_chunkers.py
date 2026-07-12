@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.app.services.document_parsers import ParsedDocument, ParsedHeading, ParsedPage
 
@@ -31,6 +31,7 @@ class TextChunk:
     page_number: int
     section_title: str | None
     token_count: int
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ def chunk_document(
                     page_number=block.page_number,
                     section_title=block.section_title,
                     token_count=count_tokens(content),
+                    metadata={"file_type": parsed_document.file_type},
                 )
             )
 
