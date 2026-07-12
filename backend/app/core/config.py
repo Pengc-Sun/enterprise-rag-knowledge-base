@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 3
     retrieval_top_k: int = 10
     final_context_k: int = 4
+    llm_provider: str = "deterministic"
+    llm_model: str = "deterministic-chat"
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_temperature: float = 0.2
+    llm_max_tokens: int = 1024
+    llm_timeout_seconds: float = 30.0
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
