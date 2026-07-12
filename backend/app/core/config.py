@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     upload_dir: str = "storage/uploads"
     max_upload_size_bytes: int = 10 * 1024 * 1024
     embedding_dimension: int = 1536
+    embedding_provider: str = "deterministic"
+    embedding_model: str = "deterministic-hash"
+    embedding_api_key: str | None = None
+    embedding_base_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
