@@ -1,7 +1,10 @@
+import asyncio
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
@@ -38,6 +41,7 @@ from backend.app.services.query_rewriting import create_query_rewrite_config
 from backend.app.services.rag import RAGSourceCitation, answer_knowledge_base_question
 from backend.app.services.rerankers import RerankerError, create_reranker
 from backend.app.services.retrieval import RetrievalMetadataFilter, create_retrieval_config
+from backend.app.services.streaming import format_sse_event, stream_text_tokens
 
 router = APIRouter(
     prefix="/knowledge-bases/{knowledge_base_id}/conversations",
@@ -218,6 +222,110 @@ async def chat_with_conversation_endpoint(
         ),
         message="conversation answered",
     )
+
+
+@router.post("/{conversation_id}/chat/stream")
+async def stream_chat_with_conversation_endpoint(
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    chat_request: ConversationChatRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> StreamingResponse:
+    conversation = await get_conversation_or_404(
+        session,
+        knowledge_base_id,
+        conversation_id,
+        current_user.id,
+    )
+    return StreamingResponse(
+        stream_conversation_answer(
+            session=session,
+            knowledge_base_id=knowledge_base_id,
+            conversation=conversation,
+            chat_request=chat_request,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def stream_conversation_answer(
+    session: AsyncSession,
+    knowledge_base_id: uuid.UUID,
+    conversation: Conversation,
+    chat_request: ConversationChatRequest,
+) -> AsyncIterator[str]:
+    yield format_sse_event("start", {"conversation_id": str(conversation.id)})
+    settings = get_settings()
+    try:
+        context_messages = await list_messages_for_conversation(session, conversation)
+        rag_answer = await answer_knowledge_base_question(
+            session=session,
+            knowledge_base_id=knowledge_base_id,
+            question=chat_request.question,
+            embedding_provider=create_embedding_provider(settings),
+            llm_provider=create_llm_provider(settings),
+            reranker=create_reranker(settings),
+            retrieval_config=create_retrieval_config(settings),
+            query_rewrite_config=create_query_rewrite_config(settings),
+            history=build_query_rewrite_history(
+                context_messages,
+                settings.conversation_context_limit,
+            ),
+            metadata_filter=build_retrieval_metadata_filter(chat_request.filters),
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+        )
+        yield format_sse_event(
+            "metadata",
+            {
+                "rewritten_question": rag_answer.query_rewrite.rewritten_query,
+                "question_was_rewritten": rag_answer.query_rewrite.was_rewritten,
+                "model": rag_answer.model,
+                "provider": rag_answer.provider.value,
+                "context_message_count": min(
+                    len(context_messages),
+                    settings.conversation_context_limit,
+                ),
+                "context_chunk_count": len(rag_answer.context_chunks),
+                "context_chunk_ids": [str(item.chunk.id) for item in rag_answer.context_chunks],
+            },
+        )
+
+        async for token in stream_text_tokens(rag_answer.answer):
+            yield format_sse_event("token", {"token": token})
+
+        user_message = await create_message(
+            session,
+            conversation,
+            MessageCreate(role=MessageRole.USER, content=chat_request.question),
+        )
+        assistant_message = await create_message(
+            session,
+            conversation,
+            MessageCreate(
+                role=MessageRole.ASSISTANT,
+                content=rag_answer.answer,
+                sources=[serialize_source(source) for source in rag_answer.sources],
+                token_usage={"model": rag_answer.model, "provider": rag_answer.provider.value},
+            ),
+        )
+        yield format_sse_event(
+            "done",
+            {
+                "user_message_id": str(user_message.id),
+                "assistant_message_id": str(assistant_message.id),
+                "sources": [serialize_source(source) for source in rag_answer.sources],
+            },
+        )
+    except asyncio.CancelledError:
+        raise
+    except (EmbeddingProviderError, LLMProviderError, RerankerError, ValueError) as exc:
+        message = getattr(exc, "message", "Conversation stream failed")
+        yield format_sse_event("error", {"message": message})
+    except Exception:
+        yield format_sse_event("error", {"message": "Conversation stream failed"})
 
 
 @router.post(
