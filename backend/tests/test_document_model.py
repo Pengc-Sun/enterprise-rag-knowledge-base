@@ -82,3 +82,19 @@ def test_document_chunk_relationship() -> None:
     assert chunk in document.chunks
     assert chunk.knowledge_base_id == knowledge_base.id
     assert chunk.chunk_metadata == {"file_type": "pdf"}
+
+
+def test_document_chunk_accepts_embedding_vector() -> None:
+    chunk = DocumentChunk(
+        document_id=uuid.uuid4(),
+        knowledge_base_id=uuid.uuid4(),
+        content="Architecture overview",
+        chunk_index=0,
+        page_number=1,
+        section_title="Overview",
+        token_count=2,
+        embedding=[0.1, 0.2, 0.3],
+        chunk_metadata={},
+    )
+
+    assert chunk.embedding == [0.1, 0.2, 0.3]

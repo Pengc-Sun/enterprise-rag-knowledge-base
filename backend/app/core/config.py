@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     upload_dir: str = "storage/uploads"
     max_upload_size_bytes: int = 10 * 1024 * 1024
+    embedding_dimension: int = 1536
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

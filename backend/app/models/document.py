@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -93,6 +94,7 @@ class DocumentChunk(Base):
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     chunk_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,
