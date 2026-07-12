@@ -4,7 +4,7 @@ Enterprise-oriented Retrieval-Augmented Generation knowledge base system.
 
 This repository follows the 8-week development roadmap in `docs/development-roadmap.md`.
 
-Current status: Week 2 authentication and knowledge base permissions are complete. See:
+Current status: Week 3 document ingestion pipeline is complete. See:
 
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
@@ -68,6 +68,15 @@ PATCH /api/v1/knowledge-bases/{knowledge_base_id}
 DELETE /api/v1/knowledge-bases/{knowledge_base_id}
 ```
 
+Document endpoints:
+
+```text
+POST /api/v1/knowledge-bases/{knowledge_base_id}/documents
+POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reprocess
+```
+
+Supported upload types: PDF, DOCX, TXT, Markdown. Duplicate uploads are rejected by SHA-256 hash within the same knowledge base.
+
 ## Docker
 
 ```bash
@@ -109,4 +118,15 @@ make check
 - Users can create knowledge bases
 - Knowledge base owner/editor/viewer permissions are enforced
 - Unauthorized users cannot access private knowledge bases
+- Pytest, Ruff, and mypy pass through `make check`
+
+## Week 3 Acceptance Status
+
+- PDF, DOCX, TXT, and Markdown files can be uploaded
+- Uploaded files are validated by extension, MIME type, size, and sanitized filename
+- Duplicate documents are rejected by SHA-256 hash within each knowledge base
+- PDF, DOCX, TXT, and Markdown parsing is covered by tests
+- Recursive, token-aware, overlap-aware, and section-aware chunking is implemented
+- Chunks are stored with document, knowledge base, page, section, token count, and JSON metadata
+- Documents can be reprocessed to replace stored chunks
 - Pytest, Ruff, and mypy pass through `make check`

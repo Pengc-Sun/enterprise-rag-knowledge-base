@@ -10,10 +10,14 @@ from backend.app.db.session import get_db_session
 from backend.app.models.user import User
 from backend.app.schemas.document import DocumentRead
 from backend.app.schemas.response import APIResponse, success_response
+from backend.app.services.document_parsers import DocumentParsingError
 from backend.app.services.documents import (
     DocumentUploadError,
+    DuplicateDocumentError,
     FileTooLargeError,
     create_document_from_upload,
+    get_document_for_knowledge_base,
+    reprocess_document,
 )
 from backend.app.services.knowledge_bases import (
     WRITE_PERMISSIONS,
@@ -57,7 +61,49 @@ async def upload_document_endpoint(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=exc.message,
         ) from exc
+    except DuplicateDocumentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except DocumentUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
     return success_response(DocumentRead.model_validate(document), message="document uploaded")
+
+
+@router.post(
+    "/{document_id}/reprocess",
+    response_model=APIResponse[DocumentRead],
+)
+async def reprocess_document_endpoint(
+    knowledge_base_id: uuid.UUID,
+    document_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[DocumentRead]:
+    knowledge_base = await get_knowledge_base_for_user(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        WRITE_PERMISSIONS,
+    )
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found",
+        )
+
+    document = await get_document_for_knowledge_base(session, knowledge_base.id, document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+
+    try:
+        processed_document = await reprocess_document(session, document)
+    except DocumentParsingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+
+    return success_response(
+        DocumentRead.model_validate(processed_document),
+        message="document reprocessed",
+    )

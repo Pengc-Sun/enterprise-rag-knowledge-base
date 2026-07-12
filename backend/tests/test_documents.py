@@ -15,6 +15,7 @@ from backend.app.main import app
 from backend.app.models.document import Document
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.services.documents import DuplicateDocumentError
 
 
 def make_user() -> User:
@@ -176,3 +177,160 @@ def test_upload_document_requires_write_permission(monkeypatch: pytest.MonkeyPat
 
     assert response.status_code == 404
     assert response.json()["message"] == "Knowledge base not found"
+
+
+def test_upload_document_rejects_duplicate_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        return knowledge_base
+
+    async def fake_create_document_from_upload(
+        session: AsyncSession,
+        knowledge_base: KnowledgeBase,
+        current_user: User,
+        upload_file: UploadFile,
+        upload_dir: str,
+        max_file_size_bytes: int,
+    ) -> Document:
+        raise DuplicateDocumentError
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "create_document_from_upload",
+        fake_create_document_from_upload,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_settings",
+        lambda: SimpleNamespace(
+            upload_dir="storage/uploads",
+            max_upload_size_bytes=10 * 1024 * 1024,
+        ),
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents",
+            files={"file": ("architecture.pdf", b"content", "application/pdf")},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "Document already exists"
+
+
+def test_reprocess_document_returns_processed_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document = make_document(knowledge_base.id, user.id)
+    document.status = "completed"
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        assert allowed_permissions == frozenset({"owner", "editor"})
+        return knowledge_base
+
+    async def fake_get_document_for_knowledge_base(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> Document:
+        assert knowledge_base_id == knowledge_base.id
+        assert document_id == document.id
+        return document
+
+    async def fake_reprocess_document(session: AsyncSession, document_arg: Document) -> Document:
+        assert document_arg is document
+        return document
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_knowledge_base",
+        fake_get_document_for_knowledge_base,
+    )
+    monkeypatch.setattr(document_endpoints, "reprocess_document", fake_reprocess_document)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document.id}/reprocess"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "document reprocessed"
+    assert body["data"]["id"] == str(document.id)
+    assert body["data"]["status"] == "completed"
+
+
+def test_reprocess_document_returns_404_for_missing_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document_id = uuid.uuid4()
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        return knowledge_base
+
+    async def fake_get_document_for_knowledge_base(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_knowledge_base",
+        fake_get_document_for_knowledge_base,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document_id}/reprocess"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Document not found"
