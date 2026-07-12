@@ -8,7 +8,7 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
 from backend.app.models.user import User
-from backend.app.schemas.rag import RAGQueryRequest, RAGQueryResponse
+from backend.app.schemas.rag import RAGQueryRequest, RAGQueryResponse, RAGSourceCitationRead
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.embeddings import EmbeddingProviderError, create_embedding_provider
 from backend.app.services.knowledge_bases import READ_PERMISSIONS, get_knowledge_base_for_user
@@ -61,5 +61,15 @@ async def query_knowledge_base_endpoint(
             provider=rag_answer.provider,
             context_chunk_count=len(rag_answer.context_chunks),
             context_chunk_ids=[item.chunk.id for item in rag_answer.context_chunks],
+            sources=[
+                RAGSourceCitationRead(
+                    document_name=source.document_name,
+                    page_number=source.page_number,
+                    chunk_id=source.chunk_id,
+                    original_text=source.original_text,
+                    similarity_score=source.similarity_score,
+                )
+                for source in rag_answer.sources
+            ],
         )
     )

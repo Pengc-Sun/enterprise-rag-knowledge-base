@@ -20,11 +20,21 @@ SYSTEM_PROMPT = (
 
 
 @dataclass(frozen=True)
+class RAGSourceCitation:
+    document_name: str
+    page_number: int
+    chunk_id: uuid.UUID
+    original_text: str
+    similarity_score: float
+
+
+@dataclass(frozen=True)
 class RAGAnswer:
     answer: str
     model: str
     provider: LLMProviderName
     context_chunks: list[RetrievedChunk]
+    sources: list[RAGSourceCitation]
 
 
 async def answer_knowledge_base_question(
@@ -56,7 +66,21 @@ async def answer_knowledge_base_question(
         model=llm_response.model,
         provider=llm_response.provider,
         context_chunks=retrieved_chunks,
+        sources=build_source_citations(retrieved_chunks),
     )
+
+
+def build_source_citations(retrieved_chunks: list[RetrievedChunk]) -> list[RAGSourceCitation]:
+    return [
+        RAGSourceCitation(
+            document_name=item.chunk.document.filename,
+            page_number=item.chunk.page_number,
+            chunk_id=item.chunk.id,
+            original_text=item.chunk.content,
+            similarity_score=item.similarity_score,
+        )
+        for item in retrieved_chunks
+    ]
 
 
 def build_rag_messages(question: str, chunks: list[DocumentChunk]) -> list[LLMMessage]:

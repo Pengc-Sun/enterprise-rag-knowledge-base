@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.app.models.document import ChunkEmbeddingStatus, DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
@@ -75,6 +76,7 @@ def build_vector_search_statement(
     distance = DocumentChunk.embedding.cosine_distance(query_embedding).label("distance")
     return (
         select(DocumentChunk, distance)
+        .options(selectinload(DocumentChunk.document))
         .where(
             DocumentChunk.knowledge_base_id == knowledge_base_id,
             DocumentChunk.embedding.is_not(None),

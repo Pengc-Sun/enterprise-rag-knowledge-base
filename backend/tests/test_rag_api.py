@@ -11,12 +11,12 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import rag as rag_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
-from backend.app.models.document import DocumentChunk
+from backend.app.models.document import Document, DocumentChunk
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
 from backend.app.services.embeddings import EmbeddingProviderConfigurationError
 from backend.app.services.llms import LLMProviderName
-from backend.app.services.rag import RAGAnswer
+from backend.app.services.rag import RAGAnswer, RAGSourceCitation
 from backend.app.services.retrieval import RetrievedChunk
 
 
@@ -49,9 +49,23 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
 
 def make_chunk(knowledge_base_id: uuid.UUID) -> DocumentChunk:
     now = datetime.now(UTC)
-    return DocumentChunk(
+    document = Document(
         id=uuid.uuid4(),
-        document_id=uuid.uuid4(),
+        knowledge_base_id=knowledge_base_id,
+        filename="architecture.md",
+        file_type="md",
+        file_size=128,
+        file_hash="a" * 64,
+        storage_path="storage/uploads/architecture.md",
+        status="completed",
+        error_message=None,
+        created_by=uuid.uuid4(),
+        created_at=now,
+        updated_at=now,
+    )
+    chunk = DocumentChunk(
+        id=uuid.uuid4(),
+        document_id=document.id,
         knowledge_base_id=knowledge_base_id,
         content="context body",
         chunk_index=0,
@@ -65,6 +79,8 @@ def make_chunk(knowledge_base_id: uuid.UUID) -> DocumentChunk:
         created_at=now,
         updated_at=now,
     )
+    chunk.document = document
+    return chunk
 
 
 def override_db_session() -> AsyncSession:
@@ -119,6 +135,15 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             model="deterministic-chat",
             provider=LLMProviderName.DETERMINISTIC,
             context_chunks=[RetrievedChunk(chunk=chunk, similarity_score=0.9)],
+            sources=[
+                RAGSourceCitation(
+                    document_name="architecture.md",
+                    page_number=1,
+                    chunk_id=chunk.id,
+                    original_text="context body",
+                    similarity_score=0.9,
+                )
+            ],
         )
 
     monkeypatch.setattr(
@@ -169,6 +194,15 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
     assert body["data"]["provider"] == "deterministic"
     assert body["data"]["context_chunk_count"] == 1
     assert body["data"]["context_chunk_ids"] == [str(chunk.id)]
+    assert body["data"]["sources"] == [
+        {
+            "document_name": "architecture.md",
+            "page_number": 1,
+            "chunk_id": str(chunk.id),
+            "original_text": "context body",
+            "similarity_score": 0.9,
+        }
+    ]
 
 
 def test_query_knowledge_base_requires_read_permission(monkeypatch: pytest.MonkeyPatch) -> None:
