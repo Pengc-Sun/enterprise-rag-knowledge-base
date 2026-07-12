@@ -26,6 +26,13 @@ class DocumentStatus(StrEnum):
     FAILED = "failed"
 
 
+class ChunkEmbeddingStatus(StrEnum):
+    PENDING = "pending"
+    EMBEDDING = "embedding"
+    EMBEDDED = "embedded"
+    FAILED = "failed"
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -95,6 +102,13 @@ class DocumentChunk(Base):
     section_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    embedding_status: Mapped[str] = mapped_column(
+        String(50),
+        default=ChunkEmbeddingStatus.PENDING.value,
+        index=True,
+        nullable=False,
+    )
+    embedding_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

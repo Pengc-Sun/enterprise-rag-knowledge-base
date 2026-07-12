@@ -1,6 +1,11 @@
 import uuid
 
-from backend.app.models.document import Document, DocumentChunk, DocumentStatus
+from backend.app.models.document import (
+    ChunkEmbeddingStatus,
+    Document,
+    DocumentChunk,
+    DocumentStatus,
+)
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
 
@@ -98,3 +103,19 @@ def test_document_chunk_accepts_embedding_vector() -> None:
     )
 
     assert chunk.embedding == [0.1, 0.2, 0.3]
+
+
+def test_document_chunk_embedding_status_defaults() -> None:
+    chunk = DocumentChunk(
+        document_id=uuid.uuid4(),
+        knowledge_base_id=uuid.uuid4(),
+        content="Architecture overview",
+        chunk_index=0,
+        page_number=1,
+        token_count=2,
+        chunk_metadata={},
+    )
+
+    assert ChunkEmbeddingStatus.PENDING.value == "pending"
+    assert chunk.embedding is None
+    assert chunk.embedding_error is None

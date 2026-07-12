@@ -1,4 +1,9 @@
-from backend.app.models.document import Document, DocumentChunk, DocumentStatus
+from backend.app.models.document import (
+    ChunkEmbeddingStatus,
+    Document,
+    DocumentChunk,
+    DocumentStatus,
+)
 from backend.app.models.knowledge_base import (
     KnowledgeBase,
     KnowledgeBaseMember,
@@ -8,6 +13,7 @@ from backend.app.models.knowledge_base import (
 from backend.app.models.user import User, UserRole
 
 __all__ = [
+    "ChunkEmbeddingStatus",
     "Document",
     "DocumentChunk",
     "DocumentStatus",

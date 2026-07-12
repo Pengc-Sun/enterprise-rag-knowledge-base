@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     embedding_model: str = "deterministic-hash"
     embedding_api_key: str | None = None
     embedding_base_url: str | None = None
+    embedding_batch_size: int = 32
+    embedding_max_retries: int = 3
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
