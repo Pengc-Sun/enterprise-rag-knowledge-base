@@ -7,10 +7,14 @@ from backend.app.core.config import Settings
 from backend.app.models.document import DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.retrieval import (
+    KeywordRetrievedChunk,
     RetrievalConfig,
+    RetrievedChunk,
     build_keyword_search_statement,
     build_vector_search_statement,
     create_retrieval_config,
+    merge_hybrid_results,
+    retrieve_hybrid_chunks,
     retrieve_keyword_chunks,
     retrieve_similar_chunks,
 )
@@ -142,6 +146,58 @@ def test_build_keyword_search_statement_accepts_codes_policy_numbers_and_models(
     assert "websearch_to_tsquery" in compile_statement(statement)
 
 
+def test_merge_hybrid_results_deduplicates_chunks_and_preserves_vector_order() -> None:
+    knowledge_base_id = uuid.uuid4()
+    vector_only_chunk = make_chunk(0, knowledge_base_id)
+    shared_chunk = make_chunk(1, knowledge_base_id)
+    keyword_only_chunk = make_chunk(2, knowledge_base_id)
+
+    candidates = merge_hybrid_results(
+        vector_results=[
+            RetrievedChunk(chunk=vector_only_chunk, similarity_score=0.9),
+            RetrievedChunk(chunk=shared_chunk, similarity_score=0.7),
+        ],
+        keyword_results=[
+            KeywordRetrievedChunk(chunk=shared_chunk, keyword_score=0.8),
+            KeywordRetrievedChunk(chunk=keyword_only_chunk, keyword_score=0.6),
+        ],
+        limit=10,
+    )
+
+    assert [item.chunk.id for item in candidates] == [
+        vector_only_chunk.id,
+        shared_chunk.id,
+        keyword_only_chunk.id,
+    ]
+    assert candidates[0].vector_score == 0.9
+    assert candidates[0].keyword_score is None
+    assert candidates[1].vector_score == 0.7
+    assert candidates[1].keyword_score == 0.8
+    assert candidates[2].vector_score is None
+    assert candidates[2].keyword_score == 0.6
+
+
+def test_merge_hybrid_results_applies_final_limit() -> None:
+    knowledge_base_id = uuid.uuid4()
+    candidates = merge_hybrid_results(
+        vector_results=[
+            RetrievedChunk(chunk=make_chunk(0, knowledge_base_id), similarity_score=0.9),
+            RetrievedChunk(chunk=make_chunk(1, knowledge_base_id), similarity_score=0.8),
+        ],
+        keyword_results=[
+            KeywordRetrievedChunk(chunk=make_chunk(2, knowledge_base_id), keyword_score=0.7),
+        ],
+        limit=2,
+    )
+
+    assert [item.chunk.chunk_index for item in candidates] == [0, 1]
+
+
+def test_merge_hybrid_results_rejects_invalid_limit() -> None:
+    with pytest.raises(ValueError):
+        merge_hybrid_results(vector_results=[], keyword_results=[], limit=0)
+
+
 @pytest.mark.asyncio
 async def test_retrieve_similar_chunks_embeds_query_and_returns_final_context() -> None:
     knowledge_base_id = uuid.uuid4()
@@ -197,6 +253,63 @@ async def test_retrieve_keyword_chunks_rejects_invalid_limit() -> None:
             query="policy",
             limit=0,
         )
+
+
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    knowledge_base_id = uuid.uuid4()
+    vector_chunk = make_chunk(0, knowledge_base_id)
+    keyword_chunk = make_chunk(1, knowledge_base_id)
+    calls: list[str] = []
+
+    async def fake_retrieve_similar_chunks(
+        session: object,
+        knowledge_base_id: uuid.UUID,
+        query: str,
+        provider: EmbeddingProvider,
+        config: RetrievalConfig | None = None,
+    ) -> list[RetrievedChunk]:
+        calls.append("vector")
+        assert query == "POLICY-2024-IT-07"
+        assert config == RetrievalConfig(retrieval_top_k=4, final_context_k=4)
+        return [RetrievedChunk(chunk=vector_chunk, similarity_score=0.9)]
+
+    async def fake_retrieve_keyword_chunks(
+        session: object,
+        knowledge_base_id: uuid.UUID,
+        query: str,
+        limit: int,
+    ) -> list[KeywordRetrievedChunk]:
+        calls.append("keyword")
+        assert query == "POLICY-2024-IT-07"
+        assert limit == 4
+        return [KeywordRetrievedChunk(chunk=keyword_chunk, keyword_score=0.7)]
+
+    monkeypatch.setattr(
+        "backend.app.services.retrieval.retrieve_similar_chunks",
+        fake_retrieve_similar_chunks,
+    )
+    monkeypatch.setattr(
+        "backend.app.services.retrieval.retrieve_keyword_chunks",
+        fake_retrieve_keyword_chunks,
+    )
+
+    candidates = await retrieve_hybrid_chunks(
+        session=object(),  # type: ignore[arg-type]
+        knowledge_base_id=knowledge_base_id,
+        query="POLICY-2024-IT-07",
+        provider=FakeEmbeddingProvider(),
+        config=RetrievalConfig(retrieval_top_k=4, final_context_k=2),
+    )
+
+    assert calls == ["vector", "keyword"]
+    assert [item.chunk.chunk_index for item in candidates] == [0, 1]
+    assert candidates[0].vector_score == 0.9
+    assert candidates[0].keyword_score is None
+    assert candidates[1].vector_score is None
+    assert candidates[1].keyword_score == 0.7
 
 
 def compile_statement(statement: Any) -> str:

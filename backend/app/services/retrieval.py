@@ -1,5 +1,5 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import Select, func, select
@@ -37,6 +37,13 @@ class RetrievedChunk:
 class KeywordRetrievedChunk:
     chunk: DocumentChunk
     keyword_score: float
+
+
+@dataclass(frozen=True)
+class HybridRetrievedChunk:
+    chunk: DocumentChunk
+    vector_score: float | None = None
+    keyword_score: float | None = None
 
 
 def create_retrieval_config(settings: "Settings") -> RetrievalConfig:
@@ -97,6 +104,75 @@ async def retrieve_keyword_chunks(
         )
         for row in result.all()
     ]
+
+
+async def retrieve_hybrid_chunks(
+    session: AsyncSession,
+    knowledge_base_id: uuid.UUID,
+    query: str,
+    provider: EmbeddingProvider,
+    config: RetrievalConfig | None = None,
+) -> list[HybridRetrievedChunk]:
+    effective_config = config or RetrievalConfig()
+    source_config = RetrievalConfig(
+        retrieval_top_k=effective_config.retrieval_top_k,
+        final_context_k=effective_config.retrieval_top_k,
+    )
+    vector_results = await retrieve_similar_chunks(
+        session=session,
+        knowledge_base_id=knowledge_base_id,
+        query=query,
+        provider=provider,
+        config=source_config,
+    )
+    keyword_results = await retrieve_keyword_chunks(
+        session=session,
+        knowledge_base_id=knowledge_base_id,
+        query=query,
+        limit=effective_config.retrieval_top_k,
+    )
+    return merge_hybrid_results(
+        vector_results=vector_results,
+        keyword_results=keyword_results,
+        limit=effective_config.final_context_k,
+    )
+
+
+def merge_hybrid_results(
+    vector_results: list[RetrievedChunk],
+    keyword_results: list[KeywordRetrievedChunk],
+    limit: int,
+) -> list[HybridRetrievedChunk]:
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+
+    ordered_chunk_ids: list[uuid.UUID] = []
+    candidates: dict[uuid.UUID, HybridRetrievedChunk] = {}
+
+    for vector_item in vector_results:
+        chunk_id = vector_item.chunk.id
+        ordered_chunk_ids.append(chunk_id)
+        candidates[chunk_id] = HybridRetrievedChunk(
+            chunk=vector_item.chunk,
+            vector_score=vector_item.similarity_score,
+        )
+
+    for keyword_item in keyword_results:
+        chunk_id = keyword_item.chunk.id
+        existing_candidate = candidates.get(chunk_id)
+        if existing_candidate is None:
+            ordered_chunk_ids.append(chunk_id)
+            candidates[chunk_id] = HybridRetrievedChunk(
+                chunk=keyword_item.chunk,
+                keyword_score=keyword_item.keyword_score,
+            )
+        else:
+            candidates[chunk_id] = replace(
+                existing_candidate,
+                keyword_score=keyword_item.keyword_score,
+            )
+
+    return [candidates[chunk_id] for chunk_id in ordered_chunk_ids[:limit]]
 
 
 def build_vector_search_statement(
