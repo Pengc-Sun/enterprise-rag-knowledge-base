@@ -1,3 +1,4 @@
+from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.models.document import (
     ChunkEmbeddingStatus,
     Document,
@@ -13,6 +14,9 @@ from backend.app.models.knowledge_base import (
 from backend.app.models.user import User, UserRole
 
 __all__ = [
+    "MessageRole",
+    "Message",
+    "Conversation",
     "ChunkEmbeddingStatus",
     "Document",
     "DocumentChunk",

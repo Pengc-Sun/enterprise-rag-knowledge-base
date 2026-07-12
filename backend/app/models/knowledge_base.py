@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 if TYPE_CHECKING:
+    from backend.app.models.conversation import Conversation
     from backend.app.models.document import Document
     from backend.app.models.user import User
 
@@ -61,6 +62,10 @@ class KnowledgeBase(Base):
         cascade="all, delete-orphan",
     )
     documents: Mapped[list[Document]] = relationship(
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+    )
+    conversations: Mapped[list[Conversation]] = relationship(
         back_populates="knowledge_base",
         cascade="all, delete-orphan",
     )
