@@ -6,6 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.document import DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.llms import LLMMessage, LLMProvider, LLMProviderName
+from backend.app.services.query_rewriting import (
+    QueryRewriteConfig,
+    QueryRewriteMessage,
+    QueryRewriteResult,
+    rewrite_query,
+)
 from backend.app.services.rerankers import RerankedChunk, Reranker
 from backend.app.services.retrieval import RetrievalConfig, retrieve_hybrid_chunks
 
@@ -32,6 +38,7 @@ class RAGAnswer:
     provider: LLMProviderName
     context_chunks: list[RerankedChunk]
     sources: list[RAGSourceCitation]
+    query_rewrite: QueryRewriteResult
 
 
 async def answer_knowledge_base_question(
@@ -42,23 +49,27 @@ async def answer_knowledge_base_question(
     llm_provider: LLMProvider,
     reranker: Reranker,
     retrieval_config: RetrievalConfig,
+    query_rewrite_config: QueryRewriteConfig | None = None,
+    history: list[QueryRewriteMessage] | None = None,
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> RAGAnswer:
+    query_rewrite = rewrite_query(question, history or [], query_rewrite_config)
+    retrieval_query = query_rewrite.rewritten_query
     candidate_chunks = await retrieve_hybrid_chunks(
         session=session,
         knowledge_base_id=knowledge_base_id,
-        query=question,
+        query=retrieval_query,
         provider=embedding_provider,
         config=retrieval_config,
     )
     retrieved_chunks = await reranker.rerank(
-        query=question,
+        query=retrieval_query,
         candidates=candidate_chunks,
         limit=retrieval_config.final_context_k,
     )
-    messages = build_rag_messages(question, [item.chunk for item in retrieved_chunks])
+    messages = build_rag_messages(retrieval_query, [item.chunk for item in retrieved_chunks])
     llm_response = await llm_provider.generate(
         messages,
         temperature=temperature,
@@ -70,6 +81,7 @@ async def answer_knowledge_base_question(
         provider=llm_response.provider,
         context_chunks=retrieved_chunks,
         sources=build_source_citations(retrieved_chunks),
+        query_rewrite=query_rewrite,
     )
 
 

@@ -6,6 +6,7 @@ import pytest
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
 from backend.app.services.llms import LLMMessage, LLMProvider, LLMProviderName, LLMResponse
+from backend.app.services.query_rewriting import QueryMessageRole, QueryRewriteMessage
 from backend.app.services.rag import (
     answer_knowledge_base_question,
     build_context,
@@ -158,7 +159,7 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
     ) -> list[HybridRetrievedChunk]:
-        assert query == "How does ingestion work?"
+        assert query == "How does ingestion work about London?"
         assert config == RetrievalConfig(retrieval_top_k=10, final_context_k=2)
         return [
             HybridRetrievedChunk(chunk=chunk, rrf_score=0.1, vector_score=0.8) for chunk in chunks
@@ -172,11 +173,17 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
     answer = await answer_knowledge_base_question(
         session=object(),  # type: ignore[arg-type]
         knowledge_base_id=knowledge_base_id,
-        question="How does ingestion work?",
+        question="What about London?",
         embedding_provider=FakeEmbeddingProvider(),
         llm_provider=llm_provider,
         reranker=reranker,
         retrieval_config=RetrievalConfig(retrieval_top_k=10, final_context_k=2),
+        history=[
+            QueryRewriteMessage(
+                role=QueryMessageRole.USER,
+                content="How does ingestion work?",
+            )
+        ],
         temperature=0.2,
         max_tokens=512,
     )
@@ -187,9 +194,11 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
     assert [source.document_name for source in answer.sources] == ["handbook-0.md", "handbook-1.md"]
     assert answer.sources[0].original_text == "context body 0"
     assert answer.sources[0].similarity_score == 0.95
-    assert reranker.query == "How does ingestion work?"
+    assert reranker.query == "How does ingestion work about London?"
     assert reranker.limit == 2
     assert "context body 0" in llm_provider.messages[1].content
-    assert "How does ingestion work?" in llm_provider.messages[1].content
+    assert "How does ingestion work about London?" in llm_provider.messages[1].content
+    assert answer.query_rewrite.rewritten_query == "How does ingestion work about London?"
+    assert answer.query_rewrite.was_rewritten is True
     assert llm_provider.temperature == 0.2
     assert llm_provider.max_tokens == 512

@@ -13,6 +13,10 @@ from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.embeddings import EmbeddingProviderError, create_embedding_provider
 from backend.app.services.knowledge_bases import READ_PERMISSIONS, get_knowledge_base_for_user
 from backend.app.services.llms import LLMProviderError, create_llm_provider
+from backend.app.services.query_rewriting import (
+    QueryRewriteMessage,
+    create_query_rewrite_config,
+)
 from backend.app.services.rag import answer_knowledge_base_question
 from backend.app.services.rerankers import RerankerError, create_reranker
 from backend.app.services.retrieval import create_retrieval_config
@@ -49,6 +53,11 @@ async def query_knowledge_base_endpoint(
             llm_provider=create_llm_provider(settings),
             reranker=create_reranker(settings),
             retrieval_config=create_retrieval_config(settings),
+            query_rewrite_config=create_query_rewrite_config(settings),
+            history=[
+                QueryRewriteMessage(role=item.role, content=item.content)
+                for item in query_request.history
+            ],
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
@@ -59,6 +68,8 @@ async def query_knowledge_base_endpoint(
     return success_response(
         RAGQueryResponse(
             answer=rag_answer.answer,
+            rewritten_question=rag_answer.query_rewrite.rewritten_query,
+            question_was_rewritten=rag_answer.query_rewrite.was_rewritten,
             model=rag_answer.model,
             provider=rag_answer.provider,
             context_chunk_count=len(rag_answer.context_chunks),

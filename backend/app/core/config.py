@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     hybrid_source_top_k: int = 20
     hybrid_candidate_top_k: int = 10
     rrf_k: int = 60
+    query_rewrite_enabled: bool = True
+    query_rewrite_history_limit: int = 6
     reranker_provider: str = "deterministic"
     reranker_model: str = "deterministic-cross-encoder"
     llm_provider: str = "deterministic"

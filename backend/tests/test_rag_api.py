@@ -16,6 +16,7 @@ from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibi
 from backend.app.models.user import User, UserRole
 from backend.app.services.embeddings import EmbeddingProviderConfigurationError
 from backend.app.services.llms import LLMProviderName
+from backend.app.services.query_rewriting import QueryRewriteResult
 from backend.app.services.rag import RAGAnswer, RAGSourceCitation
 from backend.app.services.rerankers import RerankedChunk
 
@@ -123,12 +124,16 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         llm_provider: object,
         reranker: object,
         retrieval_config: object,
+        query_rewrite_config: object,
+        history: object,
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
         assert knowledge_base_id == knowledge_base.id
-        assert question == "How does RAG work?"
+        assert question == "What about London?"
+        assert query_rewrite_config is not None
+        assert history is not None
         assert temperature == 0.2
         assert max_tokens == 1024
         return RAGAnswer(
@@ -145,6 +150,11 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
                     similarity_score=0.9,
                 )
             ],
+            query_rewrite=QueryRewriteResult(
+                original_query="What about London?",
+                rewritten_query="How does RAG work about London?",
+                was_rewritten=True,
+            ),
         )
 
     monkeypatch.setattr(
@@ -168,6 +178,8 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             embedding_base_url=None,
             retrieval_top_k=10,
             final_context_k=4,
+            query_rewrite_enabled=True,
+            query_rewrite_history_limit=6,
             hybrid_source_top_k=20,
             hybrid_candidate_top_k=10,
             rrf_k=60,
@@ -188,7 +200,10 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         client = TestClient(app)
         response = client.post(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
-            json={"question": "How does RAG work?"},
+            json={
+                "question": "What about London?",
+                "history": [{"role": "user", "content": "How does RAG work?"}],
+            },
         )
     finally:
         clear_overrides()
@@ -197,6 +212,8 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
     body = response.json()
     assert body["success"] is True
     assert body["data"]["answer"] == "Use retrieval then generation."
+    assert body["data"]["rewritten_question"] == "How does RAG work about London?"
+    assert body["data"]["question_was_rewritten"] is True
     assert body["data"]["provider"] == "deterministic"
     assert body["data"]["context_chunk_count"] == 1
     assert body["data"]["context_chunk_ids"] == [str(chunk.id)]
@@ -279,6 +296,8 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
             embedding_base_url=None,
             retrieval_top_k=10,
             final_context_k=4,
+            query_rewrite_enabled=True,
+            query_rewrite_history_limit=6,
             hybrid_source_top_k=20,
             hybrid_candidate_top_k=10,
             rrf_k=60,
