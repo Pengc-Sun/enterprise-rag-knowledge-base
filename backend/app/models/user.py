@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 if TYPE_CHECKING:
+    from backend.app.models.document import Document
     from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 
 
@@ -48,3 +49,4 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    documents: Mapped[list[Document]] = relationship(back_populates="creator")

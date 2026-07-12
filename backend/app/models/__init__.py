@@ -1,3 +1,4 @@
+from backend.app.models.document import Document, DocumentStatus
 from backend.app.models.knowledge_base import (
     KnowledgeBase,
     KnowledgeBaseMember,
@@ -7,6 +8,8 @@ from backend.app.models.knowledge_base import (
 from backend.app.models.user import User, UserRole
 
 __all__ = [
+    "Document",
+    "DocumentStatus",
     "KnowledgeBase",
     "KnowledgeBaseMember",
     "KnowledgeBasePermission",
