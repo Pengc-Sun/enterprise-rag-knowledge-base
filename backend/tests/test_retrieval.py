@@ -14,6 +14,8 @@ from backend.app.services.retrieval import (
     build_vector_search_statement,
     create_retrieval_config,
     merge_hybrid_results,
+    reciprocal_rank_fusion,
+    reciprocal_rank_score,
     retrieve_hybrid_chunks,
     retrieve_keyword_chunks,
     retrieve_similar_chunks,
@@ -79,14 +81,32 @@ def test_retrieval_config_rejects_invalid_values() -> None:
     with pytest.raises(ValueError):
         RetrievalConfig(retrieval_top_k=2, final_context_k=3)
 
+    with pytest.raises(ValueError):
+        RetrievalConfig(hybrid_source_top_k=0)
+
+    with pytest.raises(ValueError):
+        RetrievalConfig(hybrid_candidate_top_k=0)
+
+    with pytest.raises(ValueError):
+        RetrievalConfig(rrf_k=0)
+
 
 def test_create_retrieval_config_uses_settings() -> None:
-    settings = Settings(retrieval_top_k=12, final_context_k=5)
+    settings = Settings(
+        retrieval_top_k=12,
+        final_context_k=5,
+        hybrid_source_top_k=20,
+        hybrid_candidate_top_k=10,
+        rrf_k=50,
+    )
 
     config = create_retrieval_config(settings)
 
     assert config.retrieval_top_k == 12
     assert config.final_context_k == 5
+    assert config.hybrid_source_top_k == 20
+    assert config.hybrid_candidate_top_k == 10
+    assert config.rrf_k == 50
 
 
 def test_build_vector_search_statement_filters_and_orders() -> None:
@@ -146,13 +166,24 @@ def test_build_keyword_search_statement_accepts_codes_policy_numbers_and_models(
     assert "websearch_to_tsquery" in compile_statement(statement)
 
 
-def test_merge_hybrid_results_deduplicates_chunks_and_preserves_vector_order() -> None:
+def test_reciprocal_rank_score_uses_rank_and_rrf_k() -> None:
+    assert reciprocal_rank_score(rank=1, rrf_k=60) == pytest.approx(1 / 61)
+    assert reciprocal_rank_score(rank=10, rrf_k=60) == pytest.approx(1 / 70)
+
+    with pytest.raises(ValueError):
+        reciprocal_rank_score(rank=0)
+
+    with pytest.raises(ValueError):
+        reciprocal_rank_score(rank=1, rrf_k=0)
+
+
+def test_reciprocal_rank_fusion_deduplicates_and_ranks_shared_matches_first() -> None:
     knowledge_base_id = uuid.uuid4()
     vector_only_chunk = make_chunk(0, knowledge_base_id)
     shared_chunk = make_chunk(1, knowledge_base_id)
     keyword_only_chunk = make_chunk(2, knowledge_base_id)
 
-    candidates = merge_hybrid_results(
+    candidates = reciprocal_rank_fusion(
         vector_results=[
             RetrievedChunk(chunk=vector_only_chunk, similarity_score=0.9),
             RetrievedChunk(chunk=shared_chunk, similarity_score=0.7),
@@ -162,24 +193,30 @@ def test_merge_hybrid_results_deduplicates_chunks_and_preserves_vector_order() -
             KeywordRetrievedChunk(chunk=keyword_only_chunk, keyword_score=0.6),
         ],
         limit=10,
+        rrf_k=60,
     )
 
     assert [item.chunk.id for item in candidates] == [
-        vector_only_chunk.id,
         shared_chunk.id,
+        vector_only_chunk.id,
         keyword_only_chunk.id,
     ]
-    assert candidates[0].vector_score == 0.9
-    assert candidates[0].keyword_score is None
-    assert candidates[1].vector_score == 0.7
-    assert candidates[1].keyword_score == 0.8
-    assert candidates[2].vector_score is None
-    assert candidates[2].keyword_score == 0.6
+    assert candidates[0].rrf_score == pytest.approx((1 / 62) + (1 / 61))
+    assert candidates[0].vector_rank == 2
+    assert candidates[0].keyword_rank == 1
+    assert candidates[0].vector_score == 0.7
+    assert candidates[0].keyword_score == 0.8
+    assert candidates[1].rrf_score == pytest.approx(1 / 61)
+    assert candidates[1].vector_rank == 1
+    assert candidates[1].keyword_rank is None
+    assert candidates[2].rrf_score == pytest.approx(1 / 62)
+    assert candidates[2].vector_rank is None
+    assert candidates[2].keyword_rank == 2
 
 
-def test_merge_hybrid_results_applies_final_limit() -> None:
+def test_reciprocal_rank_fusion_applies_candidate_limit() -> None:
     knowledge_base_id = uuid.uuid4()
-    candidates = merge_hybrid_results(
+    candidates = reciprocal_rank_fusion(
         vector_results=[
             RetrievedChunk(chunk=make_chunk(0, knowledge_base_id), similarity_score=0.9),
             RetrievedChunk(chunk=make_chunk(1, knowledge_base_id), similarity_score=0.8),
@@ -190,12 +227,30 @@ def test_merge_hybrid_results_applies_final_limit() -> None:
         limit=2,
     )
 
-    assert [item.chunk.chunk_index for item in candidates] == [0, 1]
+    assert len(candidates) == 2
 
 
-def test_merge_hybrid_results_rejects_invalid_limit() -> None:
+def test_reciprocal_rank_fusion_rejects_invalid_settings() -> None:
     with pytest.raises(ValueError):
-        merge_hybrid_results(vector_results=[], keyword_results=[], limit=0)
+        reciprocal_rank_fusion(vector_results=[], keyword_results=[], limit=0)
+
+    with pytest.raises(ValueError):
+        reciprocal_rank_fusion(vector_results=[], keyword_results=[], limit=1, rrf_k=0)
+
+
+def test_merge_hybrid_results_uses_rrf_for_backward_compatibility() -> None:
+    knowledge_base_id = uuid.uuid4()
+    shared_chunk = make_chunk(0, knowledge_base_id)
+
+    candidates = merge_hybrid_results(
+        vector_results=[RetrievedChunk(chunk=shared_chunk, similarity_score=0.9)],
+        keyword_results=[KeywordRetrievedChunk(chunk=shared_chunk, keyword_score=0.8)],
+        limit=1,
+    )
+
+    assert candidates[0].rrf_score == pytest.approx((1 / 61) + (1 / 61))
+    assert candidates[0].vector_rank == 1
+    assert candidates[0].keyword_rank == 1
 
 
 @pytest.mark.asyncio
@@ -273,7 +328,13 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
     ) -> list[RetrievedChunk]:
         calls.append("vector")
         assert query == "POLICY-2024-IT-07"
-        assert config == RetrievalConfig(retrieval_top_k=4, final_context_k=4)
+        assert config == RetrievalConfig(
+            retrieval_top_k=4,
+            final_context_k=4,
+            hybrid_source_top_k=4,
+            hybrid_candidate_top_k=2,
+            rrf_k=60,
+        )
         return [RetrievedChunk(chunk=vector_chunk, similarity_score=0.9)]
 
     async def fake_retrieve_keyword_chunks(
@@ -301,15 +362,23 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
         knowledge_base_id=knowledge_base_id,
         query="POLICY-2024-IT-07",
         provider=FakeEmbeddingProvider(),
-        config=RetrievalConfig(retrieval_top_k=4, final_context_k=2),
+        config=RetrievalConfig(
+            retrieval_top_k=4,
+            final_context_k=2,
+            hybrid_source_top_k=4,
+            hybrid_candidate_top_k=2,
+            rrf_k=60,
+        ),
     )
 
     assert calls == ["vector", "keyword"]
     assert [item.chunk.chunk_index for item in candidates] == [0, 1]
     assert candidates[0].vector_score == 0.9
     assert candidates[0].keyword_score is None
+    assert candidates[0].rrf_score == pytest.approx(1 / 61)
     assert candidates[1].vector_score is None
     assert candidates[1].keyword_score == 0.7
+    assert candidates[1].rrf_score == pytest.approx(1 / 61)
 
 
 def compile_statement(statement: Any) -> str:

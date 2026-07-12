@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 3
     retrieval_top_k: int = 10
     final_context_k: int = 4
+    hybrid_source_top_k: int = 20
+    hybrid_candidate_top_k: int = 10
+    rrf_k: int = 60
     llm_provider: str = "deterministic"
     llm_model: str = "deterministic-chat"
     llm_api_key: str | None = None

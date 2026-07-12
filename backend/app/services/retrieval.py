@@ -1,5 +1,5 @@
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import Select, func, select
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 class RetrievalConfig:
     retrieval_top_k: int = 10
     final_context_k: int = 4
+    hybrid_source_top_k: int = 20
+    hybrid_candidate_top_k: int = 10
+    rrf_k: int = 60
 
     def __post_init__(self) -> None:
         if self.retrieval_top_k <= 0:
@@ -25,6 +28,12 @@ class RetrievalConfig:
             raise ValueError("final_context_k must be positive")
         if self.final_context_k > self.retrieval_top_k:
             raise ValueError("final_context_k cannot exceed retrieval_top_k")
+        if self.hybrid_source_top_k <= 0:
+            raise ValueError("hybrid_source_top_k must be positive")
+        if self.hybrid_candidate_top_k <= 0:
+            raise ValueError("hybrid_candidate_top_k must be positive")
+        if self.rrf_k <= 0:
+            raise ValueError("rrf_k must be positive")
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,9 @@ class KeywordRetrievedChunk:
 @dataclass(frozen=True)
 class HybridRetrievedChunk:
     chunk: DocumentChunk
+    rrf_score: float
+    vector_rank: int | None = None
+    keyword_rank: int | None = None
     vector_score: float | None = None
     keyword_score: float | None = None
 
@@ -50,6 +62,9 @@ def create_retrieval_config(settings: "Settings") -> RetrievalConfig:
     return RetrievalConfig(
         retrieval_top_k=settings.retrieval_top_k,
         final_context_k=settings.final_context_k,
+        hybrid_source_top_k=settings.hybrid_source_top_k,
+        hybrid_candidate_top_k=settings.hybrid_candidate_top_k,
+        rrf_k=settings.rrf_k,
     )
 
 
@@ -115,8 +130,11 @@ async def retrieve_hybrid_chunks(
 ) -> list[HybridRetrievedChunk]:
     effective_config = config or RetrievalConfig()
     source_config = RetrievalConfig(
-        retrieval_top_k=effective_config.retrieval_top_k,
-        final_context_k=effective_config.retrieval_top_k,
+        retrieval_top_k=effective_config.hybrid_source_top_k,
+        final_context_k=effective_config.hybrid_source_top_k,
+        hybrid_source_top_k=effective_config.hybrid_source_top_k,
+        hybrid_candidate_top_k=effective_config.hybrid_candidate_top_k,
+        rrf_k=effective_config.rrf_k,
     )
     vector_results = await retrieve_similar_chunks(
         session=session,
@@ -129,50 +147,90 @@ async def retrieve_hybrid_chunks(
         session=session,
         knowledge_base_id=knowledge_base_id,
         query=query,
-        limit=effective_config.retrieval_top_k,
+        limit=effective_config.hybrid_source_top_k,
     )
-    return merge_hybrid_results(
+    return reciprocal_rank_fusion(
         vector_results=vector_results,
         keyword_results=keyword_results,
-        limit=effective_config.final_context_k,
+        limit=effective_config.hybrid_candidate_top_k,
+        rrf_k=effective_config.rrf_k,
     )
 
 
+def reciprocal_rank_fusion(
+    vector_results: list[RetrievedChunk],
+    keyword_results: list[KeywordRetrievedChunk],
+    limit: int,
+    rrf_k: int = 60,
+) -> list[HybridRetrievedChunk]:
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if rrf_k <= 0:
+        raise ValueError("rrf_k must be positive")
+
+    candidates: dict[uuid.UUID, HybridRetrievedChunk] = {}
+
+    for rank, vector_item in enumerate(vector_results, 1):
+        chunk_id = vector_item.chunk.id
+        candidates[chunk_id] = HybridRetrievedChunk(
+            chunk=vector_item.chunk,
+            rrf_score=reciprocal_rank_score(rank, rrf_k),
+            vector_rank=rank,
+            vector_score=vector_item.similarity_score,
+        )
+
+    for rank, keyword_item in enumerate(keyword_results, 1):
+        chunk_id = keyword_item.chunk.id
+        existing_candidate = candidates.get(chunk_id)
+        keyword_rrf_score = reciprocal_rank_score(rank, rrf_k)
+        if existing_candidate is None:
+            candidates[chunk_id] = HybridRetrievedChunk(
+                chunk=keyword_item.chunk,
+                rrf_score=keyword_rrf_score,
+                keyword_rank=rank,
+                keyword_score=keyword_item.keyword_score,
+            )
+        else:
+            candidates[chunk_id] = HybridRetrievedChunk(
+                chunk=existing_candidate.chunk,
+                rrf_score=existing_candidate.rrf_score + keyword_rrf_score,
+                vector_rank=existing_candidate.vector_rank,
+                keyword_rank=rank,
+                vector_score=existing_candidate.vector_score,
+                keyword_score=keyword_item.keyword_score,
+            )
+
+    return sorted(
+        candidates.values(),
+        key=hybrid_candidate_sort_key,
+    )[:limit]
+
+
+def reciprocal_rank_score(rank: int, rrf_k: int = 60) -> float:
+    if rank <= 0:
+        raise ValueError("rank must be positive")
+    if rrf_k <= 0:
+        raise ValueError("rrf_k must be positive")
+    return 1.0 / (rrf_k + rank)
+
+
+def hybrid_candidate_sort_key(candidate: HybridRetrievedChunk) -> tuple[float, int, int]:
+    ranks = [rank for rank in (candidate.vector_rank, candidate.keyword_rank) if rank is not None]
+    best_rank = min(ranks) if ranks else 0
+    return (-candidate.rrf_score, best_rank, candidate.chunk.chunk_index)
+
+
+# Backward-compatible alias for Day30 callers; Day31 uses RRF for hybrid merging.
 def merge_hybrid_results(
     vector_results: list[RetrievedChunk],
     keyword_results: list[KeywordRetrievedChunk],
     limit: int,
 ) -> list[HybridRetrievedChunk]:
-    if limit <= 0:
-        raise ValueError("limit must be positive")
-
-    ordered_chunk_ids: list[uuid.UUID] = []
-    candidates: dict[uuid.UUID, HybridRetrievedChunk] = {}
-
-    for vector_item in vector_results:
-        chunk_id = vector_item.chunk.id
-        ordered_chunk_ids.append(chunk_id)
-        candidates[chunk_id] = HybridRetrievedChunk(
-            chunk=vector_item.chunk,
-            vector_score=vector_item.similarity_score,
-        )
-
-    for keyword_item in keyword_results:
-        chunk_id = keyword_item.chunk.id
-        existing_candidate = candidates.get(chunk_id)
-        if existing_candidate is None:
-            ordered_chunk_ids.append(chunk_id)
-            candidates[chunk_id] = HybridRetrievedChunk(
-                chunk=keyword_item.chunk,
-                keyword_score=keyword_item.keyword_score,
-            )
-        else:
-            candidates[chunk_id] = replace(
-                existing_candidate,
-                keyword_score=keyword_item.keyword_score,
-            )
-
-    return [candidates[chunk_id] for chunk_id in ordered_chunk_ids[:limit]]
+    return reciprocal_rank_fusion(
+        vector_results=vector_results,
+        keyword_results=keyword_results,
+        limit=limit,
+    )
 
 
 def build_vector_search_statement(
