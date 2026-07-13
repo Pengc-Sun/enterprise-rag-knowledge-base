@@ -16,6 +16,7 @@ class DocumentRead(BaseModel):
     storage_path: str
     status: DocumentStatus
     error_message: str | None
+    chunk_count: int = 0
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime

@@ -517,3 +517,145 @@ code {
     width: 100%;
   }
 }
+
+
+.upload-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.file-drop {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 14px;
+  color: #283443;
+  background: #fbfcfe;
+  border: 1px dashed #9aa8ba;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.file-drop span {
+  overflow: hidden;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-drop small {
+  color: #697386;
+}
+
+.file-drop input {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.table-panel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  overflow-x: auto;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.document-table {
+  display: grid;
+  min-width: 900px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.document-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) 100px 120px 90px 170px 220px;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e9f0;
+}
+
+.document-row:last-child {
+  border-bottom: 0;
+}
+
+.table-head {
+  min-height: 44px;
+  color: #697386;
+  background: #f6f7f9;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.filename-cell {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.filename-cell strong,
+.filename-cell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filename-cell small {
+  color: #8a1f1b;
+}
+
+.status-pill {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-uploaded,
+.status-parsing,
+.status-chunking,
+.status-embedding {
+  color: #543c00;
+  background: #fff5ce;
+  border: 1px solid #ead58d;
+}
+
+.status-completed {
+  color: #167153;
+  background: #e8f5ef;
+  border: 1px solid #b9ddcd;
+}
+
+.status-failed {
+  color: #8a1f1b;
+  background: #fff1ef;
+  border: 1px solid #f0beb8;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .upload-form {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-form .inline-button {
+    width: 100%;
+  }
+}

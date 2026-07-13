@@ -50,3 +50,22 @@ export type KnowledgeBasePayload = {
 };
 
 export type KnowledgeBaseUpdatePayload = Partial<KnowledgeBasePayload>;
+
+
+export type DocumentStatus = 'uploaded' | 'parsing' | 'chunking' | 'embedding' | 'completed' | 'failed';
+
+export type DocumentItem = {
+  id: string;
+  knowledge_base_id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  file_hash: string;
+  storage_path: string;
+  status: DocumentStatus;
+  error_message: string | null;
+  chunk_count: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};

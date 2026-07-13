@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
@@ -16,15 +16,46 @@ from backend.app.services.documents import (
     DuplicateDocumentError,
     FileTooLargeError,
     create_document_from_upload,
+    delete_document,
     get_document_for_knowledge_base,
+    list_documents_for_knowledge_base,
     reprocess_document,
 )
 from backend.app.services.knowledge_bases import (
+    READ_PERMISSIONS,
     WRITE_PERMISSIONS,
     get_knowledge_base_for_user,
 )
 
 router = APIRouter(prefix="/knowledge-bases/{knowledge_base_id}/documents", tags=["documents"])
+
+
+def serialize_document(document: object, chunk_count: int = 0) -> DocumentRead:
+    return DocumentRead.model_validate(document).model_copy(update={"chunk_count": chunk_count})
+
+
+@router.get("", response_model=APIResponse[list[DocumentRead]])
+async def list_documents_endpoint(
+    knowledge_base_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[DocumentRead]]:
+    knowledge_base = await get_knowledge_base_for_user(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        READ_PERMISSIONS,
+    )
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found",
+        )
+
+    documents = await list_documents_for_knowledge_base(session, knowledge_base.id)
+    return success_response(
+        [serialize_document(document, chunk_count) for document, chunk_count in documents]
+    )
 
 
 @router.post("", response_model=APIResponse[DocumentRead], status_code=status.HTTP_201_CREATED)
@@ -66,7 +97,7 @@ async def upload_document_endpoint(
     except DocumentUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
-    return success_response(DocumentRead.model_validate(document), message="document uploaded")
+    return success_response(serialize_document(document), message="document uploaded")
 
 
 @router.post(
@@ -104,6 +135,36 @@ async def reprocess_document_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
     return success_response(
-        DocumentRead.model_validate(processed_document),
+        serialize_document(processed_document),
         message="document reprocessed",
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document_endpoint(
+    knowledge_base_id: uuid.UUID,
+    document_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    knowledge_base = await get_knowledge_base_for_user(
+        session,
+        knowledge_base_id,
+        current_user.id,
+        WRITE_PERMISSIONS,
+    )
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found",
+        )
+
+    document = await get_document_for_knowledge_base(session, knowledge_base.id, document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+
+    await delete_document(session, document)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

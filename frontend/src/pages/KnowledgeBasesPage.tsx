@@ -303,6 +303,9 @@ export function KnowledgeBasesPage() {
                   <button className="primary-button inline-button" disabled={isSaving} type="submit">
                     {isSaving ? 'Saving...' : 'Save changes'}
                   </button>
+                  <Link className="secondary-button nav-button" to={`/knowledge-bases/${selected.id}/documents`}>
+                    Manage documents
+                  </Link>
                   <button
                     className="danger-button"
                     disabled={isDeleting}

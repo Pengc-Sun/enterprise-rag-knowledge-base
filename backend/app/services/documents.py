@@ -5,10 +5,10 @@ from contextlib import suppress
 from pathlib import Path, PurePath
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.document import Document, DocumentStatus
+from backend.app.models.document import Document, DocumentChunk, DocumentStatus
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
 from backend.app.services.document_chunkers import ChunkingConfig, chunk_document
@@ -163,6 +163,28 @@ async def get_document_for_knowledge_base(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def list_documents_for_knowledge_base(
+    session: AsyncSession,
+    knowledge_base_id: uuid.UUID,
+) -> list[tuple[Document, int]]:
+    result = await session.execute(
+        select(Document, func.count(DocumentChunk.id).label("chunk_count"))
+        .outerjoin(DocumentChunk, DocumentChunk.document_id == Document.id)
+        .where(Document.knowledge_base_id == knowledge_base_id)
+        .group_by(Document.id)
+        .order_by(Document.created_at.desc())
+    )
+    return [(document, int(chunk_count)) for document, chunk_count in result.all()]
+
+
+async def delete_document(session: AsyncSession, document: Document) -> None:
+    storage_path = Path(document.storage_path)
+    await session.delete(document)
+    await session.commit()
+    with suppress(OSError):
+        storage_path.unlink(missing_ok=True)
 
 
 async def reprocess_document(

@@ -334,3 +334,151 @@ def test_reprocess_document_returns_404_for_missing_document(
 
     assert response.status_code == 404
     assert response.json()["message"] == "Document not found"
+
+
+def test_list_documents_returns_chunk_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document = make_document(knowledge_base.id, user.id)
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        assert knowledge_base_id == knowledge_base.id
+        assert user_id == user.id
+        assert allowed_permissions == frozenset({"owner", "editor", "viewer"})
+        return knowledge_base
+
+    async def fake_list_documents_for_knowledge_base(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+    ) -> list[tuple[Document, int]]:
+        assert knowledge_base_id == knowledge_base.id
+        return [(document, 3)]
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "list_documents_for_knowledge_base",
+        fake_list_documents_for_knowledge_base,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/knowledge-bases/{knowledge_base.id}/documents")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"][0]["filename"] == "architecture.pdf"
+    assert body["data"][0]["chunk_count"] == 3
+
+
+def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document = make_document(knowledge_base.id, user.id)
+    deleted_document: Document | None = None
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        assert knowledge_base_id == knowledge_base.id
+        assert user_id == user.id
+        assert allowed_permissions == frozenset({"owner", "editor"})
+        return knowledge_base
+
+    async def fake_get_document_for_knowledge_base(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> Document:
+        assert knowledge_base_id == knowledge_base.id
+        assert document_id == document.id
+        return document
+
+    async def fake_delete_document(session: AsyncSession, document_arg: Document) -> None:
+        nonlocal deleted_document
+        deleted_document = document_arg
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_knowledge_base",
+        fake_get_document_for_knowledge_base,
+    )
+    monkeypatch.setattr(document_endpoints, "delete_document", fake_delete_document)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.delete(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert deleted_document is document
+
+
+def test_delete_document_returns_404_for_missing_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document_id = uuid.uuid4()
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        return knowledge_base
+
+    async def fake_get_document_for_knowledge_base(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_user",
+        fake_get_knowledge_base_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_knowledge_base",
+        fake_get_document_for_knowledge_base,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.delete(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document_id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Document not found"
