@@ -4,8 +4,9 @@ Enterprise-oriented Retrieval-Augmented Generation knowledge base system.
 
 This repository follows the 8-week development roadmap in `docs/development-roadmap.md`.
 
-Current status: Week 3 document ingestion pipeline is complete. See:
+Current status: Week 6 user-facing RAG workflow is complete. Backend APIs, document ingestion, retrieval, streaming chat, and the React frontend are now connected. See:
 
+- `docs/development-roadmap.md`
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
 
@@ -22,6 +23,7 @@ Current status: Week 3 document ingestion pipeline is complete. See:
 ## Stack
 
 - Backend: Python, FastAPI
+- Frontend: React, TypeScript, Vite
 - Database: PostgreSQL with pgvector
 - Cache: Redis
 - ORM: SQLAlchemy 2.0
@@ -32,9 +34,19 @@ Current status: Week 3 document ingestion pipeline is complete. See:
 
 ## Local Development
 
+Backend:
+
 ```bash
 make install
 make dev
+```
+
+Frontend:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
 ```
 
 Health check:
@@ -71,8 +83,30 @@ DELETE /api/v1/knowledge-bases/{knowledge_base_id}
 Document endpoints:
 
 ```text
+GET /api/v1/knowledge-bases/{knowledge_base_id}/documents
 POST /api/v1/knowledge-bases/{knowledge_base_id}/documents
 POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reprocess
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}
+```
+
+RAG endpoints:
+
+```text
+POST /api/v1/knowledge-bases/{knowledge_base_id}/query
+POST /api/v1/knowledge-bases/{knowledge_base_id}/query/debug
+```
+
+Conversation endpoints:
+
+```text
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+PATCH /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/messages
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat/stream
 ```
 
 Supported upload types: PDF, DOCX, TXT, Markdown. Duplicate uploads are rejected by SHA-256 hash within the same knowledge base.
@@ -130,3 +164,39 @@ make check
 - Chunks are stored with document, knowledge base, page, section, token count, and JSON metadata
 - Documents can be reprocessed to replace stored chunks
 - Pytest, Ruff, and mypy pass through `make check`
+
+## Week 4 Acceptance Status
+
+- pgvector extension and embedding storage are configured for document chunks
+- Chunk embedding status tracking, retry handling, and failure recording are implemented
+- Configurable embedding provider abstraction is available, including deterministic local embeddings for development and tests
+- Vector retrieval embeds user queries and returns top matching chunks within the selected knowledge base
+- Configurable LLM provider abstraction is available, including deterministic local responses for development and tests
+- Basic RAG query API answers questions using retrieved context
+- Source citations include document name, page number, chunk ID, original text, and similarity score
+- Insufficient context is handled with a safe response
+- Pytest, Ruff, and mypy pass through `make check`
+
+## Week 5 Acceptance Status
+
+- PostgreSQL full-text search is configured for document chunks
+- Hybrid retrieval combines vector search and keyword search
+- Reciprocal Rank Fusion merges vector and keyword candidates
+- Cross-encoder-style reranking abstraction is integrated into the retrieval pipeline
+- Follow-up query rewriting uses conversation history to produce standalone questions
+- Metadata filtering supports document IDs, file types, dates, departments, and permissions before generation
+- Retrieval debug endpoint exposes vector score, keyword score, RRF score, rerank score, and final rank
+- Retrieval, reranking, query rewriting, and debug behavior are covered by tests
+- Pytest, Ruff, and mypy pass through `make check`
+
+## Week 6 Acceptance Status
+
+- Conversation and message persistence are implemented
+- Multi-turn chat uses stored message history with configurable context limits
+- Server-Sent Events stream answer tokens and emit metadata, source citations, completion, and error events
+- React frontend supports registration, login, token-based route protection, and logout
+- Frontend knowledge base management supports list, create, details, edit, and delete actions
+- Frontend document management supports upload, list, processing status, chunk count, error display, reprocess, and delete actions
+- Frontend chat supports conversation list, new conversation, streaming messages, stop generation, copy answer, source cards, and citation detail modal
+- Week 6 acceptance flow is connected from login through knowledge base creation, document upload, and chat with citations
+- Backend tests pass and frontend production build passes
