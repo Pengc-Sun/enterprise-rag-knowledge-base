@@ -87,6 +87,16 @@ def test_parse_txt_document_returns_single_page(tmp_path: Path) -> None:
     assert parsed_document.text == "hello\nworld"
 
 
+def test_parse_txt_document_strips_bom_and_normalizes_nonbreaking_spaces(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_text("\ufeffHello\u00a0\u00a0world\n\n\nNext   line", encoding="utf-8")
+    document = make_document(path, "txt")
+
+    parsed_document = parse_document(document)
+
+    assert parsed_document.pages[0].text == "Hello world\n\nNext line"
+
+
 def test_parse_pdf_document_preserves_page_numbers(tmp_path: Path) -> None:
     path = tmp_path / "handbook.pdf"
     path.write_bytes(make_pdf_bytes())

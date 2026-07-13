@@ -111,6 +111,11 @@ def test_create_retrieval_config_uses_settings() -> None:
     assert config.rrf_k == 50
 
 
+def test_retrieval_metadata_filter_reports_when_empty_or_populated() -> None:
+    assert RetrievalMetadataFilter().has_filters is False
+    assert RetrievalMetadataFilter(file_types=("pdf",)).has_filters is True
+
+
 def test_retrieval_metadata_filter_rejects_invalid_date_range() -> None:
     with pytest.raises(ValueError, match="created_after cannot be later than created_before"):
         RetrievalMetadataFilter(

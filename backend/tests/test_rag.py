@@ -12,6 +12,7 @@ from backend.app.services.rag import (
     build_context,
     build_rag_messages,
     build_source_citations,
+    build_user_prompt,
 )
 from backend.app.services.rerankers import RerankedChunk, Reranker
 from backend.app.services.retrieval import (
@@ -112,6 +113,14 @@ def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
     )
     chunk.document = document
     return chunk
+
+
+def test_build_user_prompt_uses_safe_fallback_when_context_is_empty() -> None:
+    prompt = build_user_prompt("What is the policy?", [])
+
+    assert "No relevant context was found in this knowledge base." in prompt
+    assert "Question:\nWhat is the policy?" in prompt
+    assert prompt.endswith("Answer:")
 
 
 def test_build_context_formats_chunk_locations() -> None:

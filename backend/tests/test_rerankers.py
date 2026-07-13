@@ -104,3 +104,17 @@ async def test_deterministic_reranker_rejects_invalid_limit() -> None:
 
     with pytest.raises(RerankerConfigurationError):
         await reranker.rerank(query="alpha", candidates=[], limit=0)
+
+
+@pytest.mark.asyncio
+async def test_deterministic_reranker_tiebreaks_by_rrf_then_chunk_index() -> None:
+    reranker = DeterministicCrossEncoderReranker(model="deterministic-cross-encoder")
+    candidates = [
+        HybridRetrievedChunk(chunk=make_chunk(3, "alpha"), rrf_score=0.01),
+        HybridRetrievedChunk(chunk=make_chunk(2, "alpha"), rrf_score=0.02),
+        HybridRetrievedChunk(chunk=make_chunk(1, "alpha"), rrf_score=0.02),
+    ]
+
+    reranked = await reranker.rerank(query="alpha", candidates=candidates, limit=3)
+
+    assert [item.chunk.chunk_index for item in reranked] == [1, 2, 3]

@@ -120,3 +120,14 @@ def test_chunking_config_rejects_invalid_values() -> None:
 
     with pytest.raises(ValueError):
         ChunkingConfig(chunk_size_tokens=10, chunk_overlap_tokens=-1)
+
+
+def test_chunk_document_ignores_empty_pages() -> None:
+    parsed_document = ParsedDocument(
+        document_id="doc-empty",
+        file_type="txt",
+        pages=[ParsedPage(page_number=1, text="   "), ParsedPage(page_number=2, text="\n")],
+        headings=[],
+    )
+
+    assert chunk_document(parsed_document) == []

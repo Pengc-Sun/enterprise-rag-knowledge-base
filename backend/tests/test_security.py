@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -23,3 +23,15 @@ def test_create_access_token_contains_subject() -> None:
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
 
     assert payload["sub"] == "user-id"
+
+
+def test_create_access_token_uses_custom_expiration_delta() -> None:
+    settings = get_settings()
+    before = datetime.now(UTC)
+
+    token = create_access_token("user-id", expires_delta=timedelta(seconds=30))
+    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+
+    after = datetime.now(UTC)
+    expires_at = datetime.fromtimestamp(payload["exp"], UTC)
+    assert before + timedelta(seconds=29) <= expires_at <= after + timedelta(seconds=31)
