@@ -2,7 +2,7 @@ PYTHON ?= python3
 VENV ?= .venv
 BIN := $(VENV)/bin
 
-.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs migrate-up migrate-down migrate-current
+.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs migrate-up migrate-down migrate-current eval-retrieval
 
 help:
 	@echo "Available commands:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make migrate-up       Apply Alembic migrations"
 	@echo "  make migrate-down     Roll back one Alembic migration"
 	@echo "  make migrate-current  Show current Alembic revision"
+	@echo "  make eval-retrieval   Evaluate retrieval prediction metrics"
 
 $(BIN)/python:
 	$(PYTHON) -m venv $(VENV)
@@ -62,4 +63,8 @@ migrate-down:
 
 migrate-current:
 	$(BIN)/alembic current
+
+# Usage: make eval-retrieval PREDICTIONS=evaluations/retrieval_predictions.jsonl
+eval-retrieval:
+	$(BIN)/python scripts/run_retrieval_evaluation.py --predictions $(PREDICTIONS)
 

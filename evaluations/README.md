@@ -30,3 +30,26 @@ Each line is a JSON object with these fields:
 Day 47 can use `expected_document` and `expected_page` for retrieval metrics such as Hit Rate@K, Recall@K, MRR, and nDCG. Answer checks can use `expected_answer`, `answer_aliases`, and `required_terms` for deterministic or LLM-assisted grading.
 
 The records are synthetic enterprise policy examples and are designed to be paired with matching seed documents or fixtures in later evaluation work. Expected documents use the file types supported by the ingestion pipeline: PDF, TXT, Markdown, and DOCX.
+
+## Retrieval Metrics
+
+Day 47 adds reusable retrieval metrics for comparing vector-only, hybrid, and hybrid-plus-reranker runs. Prediction files are JSONL, with one row per question and strategy:
+
+```json
+{
+  "question_id": "rag_eval_001",
+  "strategy": "hybrid",
+  "candidates": [
+    {"document": "travel_policy.pdf", "page": 8, "score": 0.91},
+    {"document": "expense_policy.pdf", "page": 2, "score": 0.42}
+  ]
+}
+```
+
+Supported strategy names include `vector`, `hybrid`, and `hybrid_reranker`. Run:
+
+```bash
+make eval-retrieval PREDICTIONS=evaluations/retrieval_predictions.jsonl
+```
+
+The evaluator reports Hit Rate@K, Recall@K, MRR@K, and nDCG@K. By default a candidate must match both `expected_document` and `expected_page`; pass `--document-only` to the script for document-level evaluation.
