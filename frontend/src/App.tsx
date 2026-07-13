@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
@@ -24,6 +25,14 @@ export function App() {
         element={
           <ProtectedRoute>
             <KnowledgeBasesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/knowledge-bases/:knowledgeBaseId/chat"
+        element={
+          <ProtectedRoute>
+            <ChatPage />
           </ProtectedRoute>
         }
       />

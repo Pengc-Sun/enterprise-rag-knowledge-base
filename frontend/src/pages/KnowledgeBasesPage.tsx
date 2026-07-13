@@ -306,6 +306,9 @@ export function KnowledgeBasesPage() {
                   <Link className="secondary-button nav-button" to={`/knowledge-bases/${selected.id}/documents`}>
                     Manage documents
                   </Link>
+                  <Link className="secondary-button nav-button" to={`/knowledge-bases/${selected.id}/chat`}>
+                    Open chat
+                  </Link>
                   <button
                     className="danger-button"
                     disabled={isDeleting}

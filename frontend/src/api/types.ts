@@ -69,3 +69,44 @@ export type DocumentItem = {
   created_at: string;
   updated_at: string;
 };
+
+
+export type Conversation = {
+  id: string;
+  user_id: string;
+  knowledge_base_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MessageRole = 'user' | 'assistant' | 'system';
+
+export type SourceCitation = {
+  document_name: string;
+  page_number: number;
+  chunk_id: string;
+  original_text: string;
+  similarity_score: number;
+};
+
+export type Message = {
+  id: string;
+  conversation_id: string;
+  role: MessageRole;
+  content: string;
+  sources: SourceCitation[];
+  token_usage: Record<string, unknown> | null;
+  latency_ms: number | null;
+  created_at: string;
+};
+
+export type ConversationMetadata = {
+  rewritten_question?: string;
+  question_was_rewritten?: boolean;
+  model?: string;
+  provider?: string;
+  context_message_count?: number;
+  context_chunk_count?: number;
+  context_chunk_ids?: string[];
+};
