@@ -110,6 +110,15 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
         assert max_file_size_bytes == 10 * 1024 * 1024
         return document
 
+    async def fake_process_document_for_retrieval(
+        session: AsyncSession,
+        document_arg: Document,
+        settings: SimpleNamespace,
+    ) -> tuple[Document, int]:
+        assert document_arg is document
+        document.status = "completed"
+        return document, 2
+
     monkeypatch.setattr(
         document_endpoints,
         "get_knowledge_base_for_user",
@@ -119,6 +128,11 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
         document_endpoints,
         "create_document_from_upload",
         fake_create_document_from_upload,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "process_document_for_retrieval",
+        fake_process_document_for_retrieval,
     )
     monkeypatch.setattr(
         document_endpoints,
@@ -142,9 +156,10 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
     assert response.status_code == 201
     body = response.json()
     assert body["success"] is True
-    assert body["message"] == "document uploaded"
+    assert body["message"] == "document uploaded and processed"
     assert body["data"]["filename"] == "architecture.pdf"
-    assert body["data"]["status"] == "uploaded"
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["chunk_count"] == 2
 
 
 def test_upload_document_requires_write_permission(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -258,9 +273,13 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
         assert document_id == document.id
         return document
 
-    async def fake_reprocess_document(session: AsyncSession, document_arg: Document) -> Document:
+    async def fake_process_document_for_retrieval(
+        session: AsyncSession,
+        document_arg: Document,
+        settings: SimpleNamespace,
+    ) -> tuple[Document, int]:
         assert document_arg is document
-        return document
+        return document, 4
 
     monkeypatch.setattr(
         document_endpoints,
@@ -272,7 +291,11 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
         "get_document_for_knowledge_base",
         fake_get_document_for_knowledge_base,
     )
-    monkeypatch.setattr(document_endpoints, "reprocess_document", fake_reprocess_document)
+    monkeypatch.setattr(
+        document_endpoints,
+        "process_document_for_retrieval",
+        fake_process_document_for_retrieval,
+    )
     set_overrides(user)
 
     try:
@@ -288,6 +311,7 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
     assert body["message"] == "document reprocessed"
     assert body["data"]["id"] == str(document.id)
     assert body["data"]["status"] == "completed"
+    assert body["data"]["chunk_count"] == 4
 
 
 def test_reprocess_document_returns_404_for_missing_document(

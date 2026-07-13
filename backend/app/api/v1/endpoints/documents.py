@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.models.document import Document
 from backend.app.models.user import User
 from backend.app.schemas.document import DocumentRead
 from backend.app.schemas.response import APIResponse, success_response
+from backend.app.services.document_embeddings import embed_document_chunks
 from backend.app.services.document_parsers import DocumentParsingError
 from backend.app.services.documents import (
     DocumentUploadError,
@@ -21,6 +23,7 @@ from backend.app.services.documents import (
     list_documents_for_knowledge_base,
     reprocess_document,
 )
+from backend.app.services.embeddings import create_embedding_provider
 from backend.app.services.knowledge_bases import (
     READ_PERMISSIONS,
     WRITE_PERMISSIONS,
@@ -28,6 +31,22 @@ from backend.app.services.knowledge_bases import (
 )
 
 router = APIRouter(prefix="/knowledge-bases/{knowledge_base_id}/documents", tags=["documents"])
+
+
+async def process_document_for_retrieval(
+    session: AsyncSession,
+    document: Document,
+    settings: Settings,
+) -> tuple[Document, int]:
+    processed_document = await reprocess_document(session, document)
+    embedding_result = await embed_document_chunks(
+        session,
+        processed_document,
+        create_embedding_provider(settings),
+        settings.embedding_batch_size,
+        settings.embedding_max_retries,
+    )
+    return processed_document, embedding_result.embedded_count + embedding_result.failed_count
 
 
 def serialize_document(document: object, chunk_count: int = 0) -> DocumentRead:
@@ -97,7 +116,22 @@ async def upload_document_endpoint(
     except DocumentUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
-    return success_response(serialize_document(document), message="document uploaded")
+    try:
+        processed_document, chunk_count = await process_document_for_retrieval(
+            session,
+            document,
+            settings,
+        )
+    except DocumentParsingError:
+        return success_response(
+            serialize_document(document),
+            message="document uploaded but processing failed",
+        )
+
+    return success_response(
+        serialize_document(processed_document, chunk_count),
+        message="document uploaded and processed",
+    )
 
 
 @router.post(
@@ -129,13 +163,18 @@ async def reprocess_document_endpoint(
             detail="Document not found",
         )
 
+    settings = get_settings()
     try:
-        processed_document = await reprocess_document(session, document)
+        processed_document, chunk_count = await process_document_for_retrieval(
+            session,
+            document,
+            settings,
+        )
     except DocumentParsingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
     return success_response(
-        serialize_document(processed_document),
+        serialize_document(processed_document, chunk_count),
         message="document reprocessed",
     )
 
