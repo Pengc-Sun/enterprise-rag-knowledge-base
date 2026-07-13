@@ -1,11 +1,18 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.services.embeddings import EmbeddingProvider
-from backend.app.services.llms import LLMMessage, LLMProvider, LLMProviderName, LLMResponse
+from backend.app.services.llms import (
+    LLMMessage,
+    LLMProvider,
+    LLMProviderName,
+    LLMResponse,
+    LLMUsage,
+)
 from backend.app.services.query_rewriting import QueryMessageRole, QueryRewriteMessage
 from backend.app.services.rag import (
     answer_knowledge_base_question,
@@ -51,6 +58,7 @@ class FakeLLMProvider(LLMProvider):
             content="RAG answer",
             model="test-chat",
             provider=LLMProviderName.DETERMINISTIC,
+            usage=LLMUsage(prompt_tokens=11, completion_tokens=7, total_tokens=18),
         )
 
 
@@ -221,3 +229,60 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
     assert answer.query_rewrite.was_rewritten is True
     assert llm_provider.temperature == 0.2
     assert llm_provider.max_tokens == 512
+
+
+@pytest.mark.asyncio
+async def test_answer_knowledge_base_question_logs_structured_rag_metrics(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    knowledge_base_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    chunk = make_chunk(0, knowledge_base_id)
+
+    async def fake_retrieve_hybrid_chunks(
+        session: object,
+        knowledge_base_id: uuid.UUID,
+        query: str,
+        provider: EmbeddingProvider,
+        config: RetrievalConfig | None = None,
+        metadata_filter: RetrievalMetadataFilter | None = None,
+    ) -> list[HybridRetrievedChunk]:
+        return [HybridRetrievedChunk(chunk=chunk, rrf_score=0.1, vector_score=0.8)]
+
+    monkeypatch.setattr(
+        "backend.app.services.rag.retrieve_hybrid_chunks",
+        fake_retrieve_hybrid_chunks,
+    )
+
+    with caplog.at_level("INFO", logger="backend.app.services.rag"):
+        await answer_knowledge_base_question(
+            session=object(),  # type: ignore[arg-type]
+            knowledge_base_id=knowledge_base_id,
+            question="What is the policy?",
+            embedding_provider=FakeEmbeddingProvider(),
+            llm_provider=FakeLLMProvider(),
+            reranker=FakeReranker(),
+            retrieval_config=RetrievalConfig(retrieval_top_k=10, final_context_k=1),
+            user_id=user_id,
+        )
+
+    rag_records = [record for record in caplog.records if record.message == "rag_query_completed"]
+    assert len(rag_records) == 1
+    record = cast(Any, rag_records[0])
+    fields = cast(dict[str, Any], record.structured_fields)
+    assert fields["user_id"] == user_id
+    assert fields["knowledge_base_id"] == knowledge_base_id
+    assert fields["query"] == "What is the policy?"
+    assert fields["retrieved_chunk_ids"] == [chunk.id]
+    assert fields["status"] == "success"
+    assert fields["error"] is None
+    assert fields["token_usage"] == {
+        "prompt_tokens": 11,
+        "completion_tokens": 7,
+        "total_tokens": 18,
+    }
+    assert fields["retrieval_latency_ms"] >= 0
+    assert fields["rerank_latency_ms"] >= 0
+    assert fields["llm_latency_ms"] >= 0
+    assert fields["total_latency_ms"] >= 0

@@ -173,6 +173,7 @@ async def chat_with_conversation_endpoint(
                 settings.conversation_context_limit,
             ),
             metadata_filter=build_retrieval_metadata_filter(chat_request.filters),
+            user_id=current_user.id,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
@@ -244,6 +245,7 @@ async def stream_chat_with_conversation_endpoint(
             knowledge_base_id=knowledge_base_id,
             conversation=conversation,
             chat_request=chat_request,
+            user_id=current_user.id,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -255,6 +257,7 @@ async def stream_conversation_answer(
     knowledge_base_id: uuid.UUID,
     conversation: Conversation,
     chat_request: ConversationChatRequest,
+    user_id: uuid.UUID,
 ) -> AsyncIterator[str]:
     yield format_sse_event("start", {"conversation_id": str(conversation.id)})
     settings = get_settings()
@@ -274,6 +277,7 @@ async def stream_conversation_answer(
                 settings.conversation_context_limit,
             ),
             metadata_filter=build_retrieval_metadata_filter(chat_request.filters),
+            user_id=user_id,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )

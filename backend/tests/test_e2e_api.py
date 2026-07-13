@@ -202,6 +202,7 @@ def test_register_login_create_upload_query_and_read_sources(
         query_rewrite_config: object,
         history: object,
         metadata_filter: object,
+        user_id: uuid.UUID | None = None,
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,

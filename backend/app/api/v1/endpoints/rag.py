@@ -67,6 +67,7 @@ async def query_knowledge_base_endpoint(
                 for item in query_request.history
             ],
             metadata_filter=build_retrieval_metadata_filter(query_request.filters),
+            user_id=current_user.id,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )

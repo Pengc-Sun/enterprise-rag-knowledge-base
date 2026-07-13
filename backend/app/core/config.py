@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 30.0
+    log_level: str = "INFO"
+    log_json: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
