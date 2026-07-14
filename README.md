@@ -2,7 +2,7 @@
 
 Enterprise RAG Knowledge Base is a full-stack Retrieval-Augmented Generation system for private enterprise documents. It supports authenticated users, multiple knowledge bases, document ingestion, hybrid retrieval, reranking, multi-turn chat, streaming answers, source citations, evaluation tooling, Docker deployment, and GitHub Actions CI.
 
-The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: Week 8 CI/CD and final documentation work is in progress. Week 7 testing, evaluation, logging, and reliability work is complete.
+The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete and the repository is ready for GitHub release tagging, repository topics, and CV/interview use.
 
 ## Overview
 
@@ -110,6 +110,9 @@ docker-compose.prod.yml  Production-style Docker Compose stack
 - `docs/demo-data/`: synthetic Markdown documents for the Day 54 local demo flow.
 - `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display.
 - `docs/demo-video.md`: 2-3 minute demonstration script, recording flow, narration, and checklist.
+- `CHANGELOG.md`: v1.0.0 changelog and verification summary.
+- `docs/release-v1.0.0.md`: GitHub release notes, tag commands, topics, and release checklist.
+- `docs/cv-entry.md`: resume bullets, project summary, and interview talking points.
 
 ## Quick Start
 
@@ -374,8 +377,7 @@ Synthetic demo documents are available in `docs/demo-data/` and can be uploaded 
 - Evaluation data is synthetic and should be replaced or extended with representative enterprise documents before production benchmarking.
 - Background processing is currently implemented inside the application flow rather than a dedicated distributed worker queue.
 - The production Compose setup is suitable for validation and small deployments, not a full Kubernetes or managed-cloud architecture.
-- Screenshots and demo data are still pending Day 54.
-- The project does not yet include a public hosted demo URL.
+- The project does not include a public hosted demo URL; the local demo flow and release notes are documented.
 
 ## Roadmap
 
@@ -388,14 +390,14 @@ Completed:
 - Week 5: full-text search, hybrid retrieval, RRF, reranking, query rewriting, metadata filters, retrieval debug API.
 - Week 6: conversations, streaming chat, React auth, knowledge base/document/chat frontend flows.
 - Week 7: focused tests, integration/e2e API tests, RAG evaluation dataset, retrieval metrics, structured logging, unified errors, retry handling.
-- Week 8 Day 50-52: production Docker setup, GitHub Actions CI, complete README.
+- Week 8: production Docker setup, GitHub Actions CI, complete README, detailed documentation, screenshots, demo data, demo video materials, changelog, release notes, and v1.0.0 release preparation.
 
-Remaining Week 8 work:
+Release follow-up:
 
-- Day 53: detailed architecture, API, deployment, evaluation, and security documentation.
-- Day 54: screenshots and demo data.
-- Day 55: demo video script and release notes.
-- Day 56: final cleanup, GitHub release, and v1.0 tag.
+- Commit and push release prep changes.
+- Create and push the `v1.0.0` tag.
+- Publish the GitHub Release using `docs/release-v1.0.0.md`.
+- Add repository topics and attach the demo video as a release asset if available.
 
 ## Development Logs
 
