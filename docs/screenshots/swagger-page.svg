@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">Swagger API Page</title>
+  <desc id="desc">FastAPI OpenAPI documentation for auth, documents, RAG, and conversations.</desc>
+  <style>
+    .bg { fill: #f6f8fb; }
+    .top { fill: #111827; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.5; }
+    .accent { fill: #2563eb; }
+    .soft { fill: #eef4ff; }
+    .card { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .pill { fill: #e8f2ff; stroke: #9cc4ff; stroke-width: 1; }
+    .title { fill: #111827; font: 700 42px Arial, sans-serif; }
+    .subtitle { fill: #4b5563; font: 400 22px Arial, sans-serif; }
+    .h2 { fill: #111827; font: 700 24px Arial, sans-serif; }
+    .line { fill: #1f2937; font: 400 21px Arial, sans-serif; }
+    .muted { fill: #6b7280; font: 400 18px Arial, sans-serif; }
+    .pilltext { fill: #1d4ed8; font: 700 17px Arial, sans-serif; }
+    .nav { fill: #ffffff; font: 700 20px Arial, sans-serif; }
+    .small { fill: #6b7280; font: 400 15px Arial, sans-serif; }
+  </style>
+  <rect class="bg" width="1280" height="820"/>
+  <rect class="top" x="0" y="0" width="1280" height="78"/>
+  <circle class="accent" cx="54" cy="39" r="18"/>
+  <text x="88" y="47" class="nav">Enterprise RAG Knowledge Base</text>
+  <rect x="44" y="112" width="1192" height="660" rx="14" class="panel"/>
+  <text x="92" y="104" class="small">Day 54 documentation asset</text>
+  <text x="92" y="138" class="title">Swagger API Page</text>
+  <text x="92" y="171" class="subtitle">FastAPI OpenAPI documentation for auth, documents, RAG, and conversations.</text>
+  <text x="92" y="160" class="h2">Enterprise RAG Knowledge Base</text><text x="92" y="206" class="muted">OpenAPI 0.1.0</text><rect x="82" y="206" width="1116" height="58" rx="8" class="card"/><text x="108" y="240" class="line">POST /api/v1/auth/register</text><rect x="82" y="280" width="1116" height="58" rx="8" class="card"/><text x="108" y="314" class="line">POST /api/v1/knowledge-bases/{knowledge_base_id}/documents</text><rect x="82" y="354" width="1116" height="58" rx="8" class="card"/><text x="108" y="388" class="line">POST /api/v1/knowledge-bases/{knowledge_base_id}/query/debug</text><rect x="82" y="428" width="1116" height="58" rx="8" class="card"/><text x="108" y="462" class="line">POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat/stream</text>
+</svg>

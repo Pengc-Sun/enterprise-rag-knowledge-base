@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">RAG Pipeline</title>
+  <desc id="desc">Document ingestion and query-time answer generation flow.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/></marker></defs>
+  <style>
+    .bg { fill: #f7f9fc; } .title { fill: #111827; font: 700 38px Arial, sans-serif; } .subtitle { fill: #4b5563; font: 400 20px Arial, sans-serif; }
+    .node { fill: #ffffff; stroke: #c8d3e3; stroke-width: 1.5; } .nodeTitle { fill: #111827; font: 700 21px Arial, sans-serif; } .nodeLine { fill: #4b5563; font: 400 17px Arial, sans-serif; }
+    .edge { stroke: #2563eb; stroke-width: 2.3; } .edgeLabel { fill: #1d4ed8; font: 700 14px Arial, sans-serif; }
+  </style>
+  <rect width="1280" height="820" class="bg"/>
+  <text x="60" y="70" class="title">RAG Pipeline</text>
+  <text x="60" y="104" class="subtitle">Document ingestion and query-time answer generation flow.</text>
+  <line x1="180.0" y1="245" x2="495.0" y2="150" class="edge" marker-end="url(#arrow)"/><line x1="495.0" y1="245" x2="810.0" y2="150" class="edge" marker-end="url(#arrow)"/><line x1="810.0" y1="245" x2="1125.0" y2="150" class="edge" marker-end="url(#arrow)"/><line x1="1125.0" y1="245" x2="275.0" y2="430" class="edge" marker-end="url(#arrow)"/><text x="710.0" y="329.5" class="edgeLabel">store vectors</text><line x1="275.0" y1="540" x2="640.0" y2="430" class="edge" marker-end="url(#arrow)"/><line x1="640.0" y1="540" x2="1015.0" y2="430" class="edge" marker-end="url(#arrow)"/>
+  <rect x="70" y="150" width="220" height="95" rx="12" class="node"/><text x="94" y="188" class="nodeTitle">Upload</text><text x="94" y="222" class="nodeLine">PDF, DOCX, TXT, MD</text><rect x="385" y="150" width="220" height="95" rx="12" class="node"/><text x="409" y="188" class="nodeTitle">Parse</text><text x="409" y="222" class="nodeLine">Extract text</text><rect x="700" y="150" width="220" height="95" rx="12" class="node"/><text x="724" y="188" class="nodeTitle">Chunk</text><text x="724" y="222" class="nodeLine">Pages, sections, tokens</text><rect x="1015" y="150" width="220" height="95" rx="12" class="node"/><text x="1039" y="188" class="nodeTitle">Embed</text><text x="1039" y="222" class="nodeLine">Provider abstraction</text><rect x="155" y="430" width="240" height="110" rx="12" class="node"/><text x="179" y="468" class="nodeTitle">Hybrid Retrieve</text><text x="179" y="502" class="nodeLine">Vector + keyword</text><text x="179" y="528" class="nodeLine">RRF merge</text><rect x="520" y="430" width="240" height="110" rx="12" class="node"/><text x="544" y="468" class="nodeTitle">Rerank</text><text x="544" y="502" class="nodeLine">Final context K</text><rect x="885" y="430" width="260" height="110" rx="12" class="node"/><text x="909" y="468" class="nodeTitle">Generate Answer</text><text x="909" y="502" class="nodeLine">Grounded prompt</text><text x="909" y="528" class="nodeLine">Citations</text>
+</svg>

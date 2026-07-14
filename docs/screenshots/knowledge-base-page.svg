@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">Knowledge Base Page</title>
+  <desc id="desc">Corpus management view with list, details, and edit controls.</desc>
+  <style>
+    .bg { fill: #f6f8fb; }
+    .top { fill: #111827; }
+    .panel { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.5; }
+    .accent { fill: #2563eb; }
+    .soft { fill: #eef4ff; }
+    .card { fill: #ffffff; stroke: #d8dee9; stroke-width: 1.2; }
+    .pill { fill: #e8f2ff; stroke: #9cc4ff; stroke-width: 1; }
+    .title { fill: #111827; font: 700 42px Arial, sans-serif; }
+    .subtitle { fill: #4b5563; font: 400 22px Arial, sans-serif; }
+    .h2 { fill: #111827; font: 700 24px Arial, sans-serif; }
+    .line { fill: #1f2937; font: 400 21px Arial, sans-serif; }
+    .muted { fill: #6b7280; font: 400 18px Arial, sans-serif; }
+    .pilltext { fill: #1d4ed8; font: 700 17px Arial, sans-serif; }
+    .nav { fill: #ffffff; font: 700 20px Arial, sans-serif; }
+    .small { fill: #6b7280; font: 400 15px Arial, sans-serif; }
+  </style>
+  <rect class="bg" width="1280" height="820"/>
+  <rect class="top" x="0" y="0" width="1280" height="78"/>
+  <circle class="accent" cx="54" cy="39" r="18"/>
+  <text x="88" y="47" class="nav">Enterprise RAG Knowledge Base</text>
+  <rect x="44" y="112" width="1192" height="660" rx="14" class="panel"/>
+  <text x="92" y="104" class="small">Day 54 documentation asset</text>
+  <text x="92" y="138" class="title">Knowledge Base Page</text>
+  <text x="92" y="171" class="subtitle">Corpus management view with list, details, and edit controls.</text>
+  <text x="92" y="160" class="h2">Corpus management</text><rect x="82" y="171" width="1116" height="56" rx="8" class="card"/><text x="108" y="206" class="line">Policy Demo</text><text x="318" y="206" class="line">private</text><text x="528" y="206" class="line">Created today</text><text x="738" y="206" class="line">Open</text><rect x="82" y="243" width="1116" height="56" rx="8" class="card"/><text x="108" y="278" class="line">Security Handbook</text><text x="318" y="278" class="line">private</text><text x="528" y="278" class="line">Completed</text><text x="738" y="278" class="line">Open</text><rect x="82" y="316" width="1116" height="58" rx="8" class="card"/><text x="108" y="350" class="line">Selected: Enterprise Policy Demo</text><rect x="82" y="390" width="1116" height="58" rx="8" class="card"/><text x="108" y="424" class="line">Actions: Documents, Chat, Save changes, Delete</text>
+</svg>

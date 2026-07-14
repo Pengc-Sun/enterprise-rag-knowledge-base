@@ -107,6 +107,8 @@ docker-compose.prod.yml  Production-style Docker Compose stack
 - `docs/deployment.md`: local development, Docker Compose, migrations, production-style startup order, and CI.
 - `docs/evaluation.md`: RAG evaluation dataset, prediction format, retrieval metrics, and debug workflow.
 - `docs/security.md`: authentication, authorization, upload controls, secrets, logging, and hardening checklist.
+- `docs/demo-data/`: synthetic Markdown documents for the Day 54 local demo flow.
+- `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display.
 
 ## Quick Start
 
@@ -337,14 +339,22 @@ By default, a candidate must match both expected document and expected page. Use
 
 ## Screenshots
 
-Screenshot capture is scheduled for Day 54. Planned README screenshots:
+Day 54 adds documentation-ready SVG snapshots and diagrams under `docs/screenshots/`. They are generated from the current UI, API, CI, and evaluation workflow so they render directly on GitHub.
 
-- Login and registration flow.
-- Knowledge base list and detail page.
-- Document upload and processing status.
-- Chat with streaming answer and source citations.
-- Retrieval debug output.
-- GitHub Actions CI result.
+| Asset | Preview |
+| --- | --- |
+| Architecture diagram | <img src="docs/screenshots/architecture.svg" width="420" alt="Architecture diagram"> |
+| RAG pipeline diagram | <img src="docs/screenshots/rag-pipeline.svg" width="420" alt="RAG pipeline diagram"> |
+| Login page | <img src="docs/screenshots/login-page.svg" width="420" alt="Login page"> |
+| Knowledge base page | <img src="docs/screenshots/knowledge-base-page.svg" width="420" alt="Knowledge base page"> |
+| Upload page | <img src="docs/screenshots/upload-page.svg" width="420" alt="Upload page"> |
+| Chat page | <img src="docs/screenshots/chat-page.svg" width="420" alt="Chat page"> |
+| Citation display | <img src="docs/screenshots/citation-display.svg" width="420" alt="Citation display"> |
+| Swagger page | <img src="docs/screenshots/swagger-page.svg" width="420" alt="Swagger page"> |
+| GitHub Actions page | <img src="docs/screenshots/github-actions-page.svg" width="420" alt="GitHub Actions page"> |
+| Evaluation results | <img src="docs/screenshots/evaluation-results.svg" width="420" alt="Evaluation results"> |
+
+Synthetic demo documents are available in `docs/demo-data/` and can be uploaded through the frontend for a repeatable local demo.
 
 ## Security Considerations
 

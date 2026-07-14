@@ -5,6 +5,8 @@ This directory contains the labelled question set for Week 7 retrieval and answe
 ## Files
 
 - `rag_qa_dataset.jsonl`: 40 labelled RAG evaluation questions.
+- `retrieval_predictions.jsonl`: synthetic Day 54 prediction file covering `vector`, `hybrid`, and `hybrid_reranker` strategies.
+- `retrieval_metrics.json`: generated metric rows from `scripts/run_retrieval_evaluation.py`.
 
 ## JSONL Schema
 
@@ -74,3 +76,21 @@ Day 49 standardizes failed API responses so evaluation and smoke-test clients ca
 ```
 
 LLM calls use bounded retries for transient `5xx`, timeout, and `429` responses. Persistent provider rate limits return HTTP `429` with `code=rate_limited`; persistent provider timeouts return HTTP `504` with `code=gateway_timeout`. Evaluation scripts should treat these rows as failed attempts and keep the `request_id` for log correlation.
+
+## Day 54 Demo Results
+
+The committed Day 54 prediction file is synthetic and is intended to make the evaluation workflow visible on GitHub. Reproduce the metrics with:
+
+```bash
+.venv/bin/python scripts/run_retrieval_evaluation.py \
+  --predictions evaluations/retrieval_predictions.jsonl \
+  --json-output evaluations/retrieval_metrics.json
+```
+
+Summary at K=1:
+
+| Strategy | Hit Rate@1 | MRR@1 | nDCG@1 |
+| --- | ---: | ---: | ---: |
+| vector | 0.750 | 0.750 | 0.750 |
+| hybrid | 0.900 | 0.900 | 0.900 |
+| hybrid_reranker | 1.000 | 1.000 | 1.000 |

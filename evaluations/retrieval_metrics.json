@@ -1,0 +1,122 @@
+[
+  {
+    "strategy": "vector",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 1,
+    "hit_rate": 0.75,
+    "recall": 0.75,
+    "mrr": 0.75,
+    "ndcg": 0.75
+  },
+  {
+    "strategy": "vector",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 3,
+    "hit_rate": 0.75,
+    "recall": 0.75,
+    "mrr": 0.75,
+    "ndcg": 0.75
+  },
+  {
+    "strategy": "vector",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 5,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 0.8125,
+    "ndcg": 0.8576691395183484
+  },
+  {
+    "strategy": "vector",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 10,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 0.8125,
+    "ndcg": 0.8576691395183484
+  },
+  {
+    "strategy": "hybrid",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 1,
+    "hit_rate": 0.9,
+    "recall": 0.9,
+    "mrr": 0.9,
+    "ndcg": 0.9
+  },
+  {
+    "strategy": "hybrid",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 3,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 0.9333333333333333,
+    "ndcg": 0.95
+  },
+  {
+    "strategy": "hybrid",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 5,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 0.9333333333333333,
+    "ndcg": 0.95
+  },
+  {
+    "strategy": "hybrid",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 10,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 0.9333333333333333,
+    "ndcg": 0.95
+  },
+  {
+    "strategy": "hybrid_reranker",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 1,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 1.0,
+    "ndcg": 1.0
+  },
+  {
+    "strategy": "hybrid_reranker",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 3,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 1.0,
+    "ndcg": 1.0
+  },
+  {
+    "strategy": "hybrid_reranker",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 5,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 1.0,
+    "ndcg": 1.0
+  },
+  {
+    "strategy": "hybrid_reranker",
+    "question_count": 40,
+    "predicted_count": 40,
+    "k": 10,
+    "hit_rate": 1.0,
+    "recall": 1.0,
+    "mrr": 1.0,
+    "ndcg": 1.0
+  }
+]
