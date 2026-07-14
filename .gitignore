@@ -21,6 +21,7 @@ env/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # Editors and OS
 .DS_Store

@@ -114,10 +114,24 @@ Supported upload types: PDF, DOCX, TXT, Markdown. Duplicate uploads are rejected
 
 ## Docker
 
+Development services:
+
 ```bash
 make docker-up
 make docker-down
 ```
+
+Production-style deployment:
+
+```bash
+cp .env.production.example .env.production
+# Edit .env.production secrets before using it outside local validation.
+make docker-prod-config PROD_ENV=.env.production
+make docker-prod-up PROD_ENV=.env.production
+make docker-prod-down
+```
+
+The production Compose stack builds the backend image, runs Alembic migrations as a one-shot service, serves the React build through Nginx, proxies `/api/v1` to the backend, and keeps PostgreSQL, Redis, and uploaded files on named volumes.
 
 ## Database Migrations
 

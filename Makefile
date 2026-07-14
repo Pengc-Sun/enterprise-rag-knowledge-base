@@ -1,8 +1,9 @@
 PYTHON ?= python3
 VENV ?= .venv
 BIN := $(VENV)/bin
+PROD_ENV ?= .env.production.example
 
-.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs migrate-up migrate-down migrate-current eval-retrieval
+.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs docker-prod-up docker-prod-down docker-prod-logs docker-prod-config migrate-up migrate-down migrate-current eval-retrieval
 
 help:
 	@echo "Available commands:"
@@ -16,6 +17,10 @@ help:
 	@echo "  make docker-up        Build and start Docker services"
 	@echo "  make docker-down      Stop Docker services"
 	@echo "  make docker-logs      Follow Docker service logs"
+	@echo "  make docker-prod-up   Build and start production Docker services"
+	@echo "  make docker-prod-down Stop production Docker services"
+	@echo "  make docker-prod-logs Follow production Docker service logs"
+	@echo "  make docker-prod-config Validate production Docker Compose config"
 	@echo "  make migrate-up       Apply Alembic migrations"
 	@echo "  make migrate-down     Roll back one Alembic migration"
 	@echo "  make migrate-current  Show current Alembic revision"
@@ -54,6 +59,19 @@ docker-down:
 
 docker-logs:
 	docker compose logs -f
+
+
+docker-prod-up:
+	APP_ENV_FILE=$(PROD_ENV) docker compose --env-file $(PROD_ENV) -f docker-compose.prod.yml up -d --build
+
+docker-prod-down:
+	docker compose -f docker-compose.prod.yml down
+
+docker-prod-logs:
+	APP_ENV_FILE=$(PROD_ENV) docker compose --env-file $(PROD_ENV) -f docker-compose.prod.yml logs -f
+
+docker-prod-config:
+	APP_ENV_FILE=$(PROD_ENV) docker compose --env-file $(PROD_ENV) -f docker-compose.prod.yml config
 
 migrate-up:
 	$(BIN)/alembic upgrade head

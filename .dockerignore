@@ -15,4 +15,9 @@ htmlcov
 logs
 storage
 uploads
-
+frontend/node_modules
+frontend/dist
+node_modules
+dist
+.env.production
+.env.local
