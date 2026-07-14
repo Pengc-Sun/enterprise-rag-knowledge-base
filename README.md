@@ -209,6 +209,8 @@ Copy `.env.example` for local development or `.env.production.example` for produ
 
 Do not commit `.env` or real API keys. Rotate `JWT_SECRET_KEY`, database passwords, and provider keys before any shared deployment.
 
+For OpenRouter, keep the provider set to `openai`, set `LLM_BASE_URL=https://openrouter.ai/api/v1`, and put the chat model slug such as `tencent/hy3:free` in `LLM_MODEL`. Embeddings are configured separately through `EMBEDDING_*`; use an OpenRouter embedding model and set `EMBEDDING_DIMENSION` to the model output size before uploading or reprocessing documents.
+
 ## API Documentation
 
 Interactive API documentation is available at:

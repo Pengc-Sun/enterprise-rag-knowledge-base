@@ -1,17 +1,22 @@
+import json
 import math
 
+import httpx
 import pytest
 
 from backend.app.core.config import Settings
 from backend.app.services.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingProviderConfigurationError,
-    EmbeddingProviderError,
     EmbeddingProviderName,
+    EmbeddingProviderRateLimitError,
+    EmbeddingProviderResponseError,
+    EmbeddingProviderTimeoutError,
     RemoteEmbeddingProvider,
     UnsupportedEmbeddingProviderError,
     build_embedding_provider,
     create_embedding_provider,
+    parse_embedding_response,
 )
 
 
@@ -98,16 +103,105 @@ async def test_remote_provider_requires_api_key() -> None:
 
 
 @pytest.mark.asyncio
-async def test_remote_provider_placeholder_raises_until_client_is_implemented() -> None:
-    provider = RemoteEmbeddingProvider(
-        provider_name=EmbeddingProviderName.BGE,
-        dimension=1024,
-        model="bge-large",
-        api_key="secret",
-    )
+async def test_remote_provider_posts_openai_compatible_embedding_request() -> None:
+    captured_request: dict[str, object] = {}
 
-    with pytest.raises(EmbeddingProviderError):
-        await provider.embed_documents(["hello"])
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["url"] = str(request.url)
+        captured_request["authorization"] = request.headers.get("authorization")
+        captured_request["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": 1, "embedding": [0.4, 0.5, 0.6]},
+                    {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = RemoteEmbeddingProvider(
+            provider_name=EmbeddingProviderName.OPENAI,
+            dimension=3,
+            model="text-embedding-test",
+            api_key="secret",
+            base_url="https://example.test/api/v1/",
+            client=client,
+        )
+
+        embeddings = await provider.embed_documents(["first", "second"])
+
+    assert captured_request == {
+        "url": "https://example.test/api/v1/embeddings",
+        "authorization": "Bearer secret",
+        "payload": {"model": "text-embedding-test", "input": ["first", "second"]},
+    }
+    assert embeddings == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+
+
+@pytest.mark.asyncio
+async def test_remote_provider_returns_empty_list_for_empty_input() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = RemoteEmbeddingProvider(
+            provider_name=EmbeddingProviderName.OPENAI,
+            dimension=3,
+            model="text-embedding-test",
+            api_key="secret",
+            base_url="https://example.test/api/v1",
+            client=client,
+        )
+
+        assert await provider.embed_documents([]) == []
+
+
+def test_parse_embedding_response_rejects_wrong_dimension() -> None:
+    with pytest.raises(EmbeddingProviderResponseError):
+        parse_embedding_response(
+            {"data": [{"index": 0, "embedding": [0.1, 0.2]}]},
+            expected_count=1,
+            dimension=3,
+        )
+
+
+@pytest.mark.asyncio
+async def test_remote_provider_maps_rate_limit_response() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(429))
+    ) as client:
+        provider = RemoteEmbeddingProvider(
+            provider_name=EmbeddingProviderName.OPENAI,
+            dimension=3,
+            model="text-embedding-test",
+            api_key="secret",
+            base_url="https://example.test/api/v1",
+            client=client,
+        )
+
+        with pytest.raises(EmbeddingProviderRateLimitError):
+            await provider.embed_documents(["hello"])
+
+
+@pytest.mark.asyncio
+async def test_remote_provider_maps_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = RemoteEmbeddingProvider(
+            provider_name=EmbeddingProviderName.OPENAI,
+            dimension=3,
+            model="text-embedding-test",
+            api_key="secret",
+            base_url="https://example.test/api/v1",
+            client=client,
+        )
+
+        with pytest.raises(EmbeddingProviderTimeoutError):
+            await provider.embed_documents(["hello"])
 
 
 def vector_norm(values: list[float]) -> float:

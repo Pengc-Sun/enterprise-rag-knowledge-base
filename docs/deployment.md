@@ -40,6 +40,25 @@ Before using production-style settings outside local validation, change at least
 
 Do not commit `.env` files.
 
+### OpenRouter Chat and Embeddings
+
+OpenRouter uses OpenAI-compatible API paths. Configure it through the existing `openai` provider setting and the OpenRouter base URL:
+
+```bash
+LLM_PROVIDER=openai
+LLM_MODEL=tencent/hy3:free
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=<your-openrouter-key>
+
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=<openrouter-embedding-model>
+EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+EMBEDDING_API_KEY=<your-openrouter-key>
+EMBEDDING_DIMENSION=<model-output-dimension>
+```
+
+`tencent/hy3:free` is a chat model configuration. Embeddings must use a model that supports the `/embeddings` endpoint. If you change the embedding model or dimension after documents were uploaded, re-upload or reprocess documents so stored vectors use the same dimension and model.
+
 ## Development Docker Stack
 
 Start the development stack:
@@ -242,7 +261,7 @@ Before sharing or deploying:
 - Run frontend `pnpm typecheck` and `pnpm build`.
 - Confirm GitHub Actions passes.
 - Confirm upload storage volume is persistent.
-- Confirm provider API keys and model names are configured if deterministic providers are not used.
+- Confirm provider API keys, model names, base URLs, and embedding dimensions are configured if deterministic providers are not used.
 
 ## Current Deployment Scope
 

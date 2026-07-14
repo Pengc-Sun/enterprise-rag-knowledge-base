@@ -155,7 +155,7 @@ The RAG service logs retrieval latency, rerank latency, LLM latency, total laten
 
 The backend includes provider abstraction layers for:
 
-- Embeddings: deterministic local provider plus placeholders for BGE, Qwen, and OpenAI-compatible providers.
+- Embeddings: deterministic local provider plus OpenAI-compatible remote providers for OpenAI, Qwen-compatible endpoints, and other compatible gateways such as OpenRouter.
 - Reranking: deterministic cross-encoder-style reranker.
 - LLMs: deterministic local provider and OpenAI-compatible providers for DeepSeek, Qwen, and OpenAI.
 
@@ -190,5 +190,5 @@ The current observability layer includes:
 ## Current Constraints
 
 - Background document processing runs inside the request path rather than an external worker queue.
-- Remote embedding clients are represented by configuration-aware placeholders; deterministic embeddings are the implemented local default.
+- Remote OpenAI-compatible embedding clients are implemented; deterministic embeddings remain the local default for development and CI.
 - Production Compose is intended for validation and small deployments, not a managed cloud architecture.

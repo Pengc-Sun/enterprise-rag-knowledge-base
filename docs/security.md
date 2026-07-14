@@ -164,7 +164,7 @@ Production-style Docker currently exposes only the frontend port by default. The
 
 ## Provider Security
 
-Remote LLM providers use bearer API keys in HTTP `Authorization` headers. The OpenAI-compatible provider applies:
+Remote LLM and embedding providers use bearer API keys in HTTP `Authorization` headers. The OpenAI-compatible LLM provider applies:
 
 - request timeout
 - bounded retries
@@ -174,7 +174,7 @@ Remote LLM providers use bearer API keys in HTTP `Authorization` headers. The Op
 When enabling remote providers:
 
 - store keys only in environment variables or a secret manager
-- verify base URLs
+- verify base URLs and model names
 - monitor provider errors and rate limits
 - avoid sending documents that should not leave the deployment boundary
 
