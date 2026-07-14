@@ -100,6 +100,14 @@ docker-compose.yml       Development Docker Compose stack
 docker-compose.prod.yml  Production-style Docker Compose stack
 ```
 
+## Detailed Documentation
+
+- `docs/architecture.md`: system architecture, data model, request flow, and RAG pipeline.
+- `docs/api.md`: API endpoints, response envelope, authentication, permissions, and examples.
+- `docs/deployment.md`: local development, Docker Compose, migrations, production-style startup order, and CI.
+- `docs/evaluation.md`: RAG evaluation dataset, prediction format, retrieval metrics, and debug workflow.
+- `docs/security.md`: authentication, authorization, upload controls, secrets, logging, and hardening checklist.
+
 ## Quick Start
 
 ### 1. Clone and configure
