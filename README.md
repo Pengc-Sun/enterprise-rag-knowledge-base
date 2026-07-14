@@ -4,11 +4,12 @@ Enterprise-oriented Retrieval-Augmented Generation knowledge base system.
 
 This repository follows the 8-week development roadmap in `docs/development-roadmap.md`.
 
-Current status: Week 6 user-facing RAG workflow is complete. Backend APIs, document ingestion, retrieval, streaming chat, and the React frontend are now connected. See:
+Current status: Week 7 testing, evaluation, logging, and reliability work is complete. The project now has broad backend tests, reproducible retrieval evaluation assets, structured request/RAG logs, and unified API error handling. See:
 
 - `docs/development-roadmap.md`
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
+- `evaluations/README.md`
 
 ## Goals
 
@@ -200,3 +201,17 @@ make check
 - Frontend chat supports conversation list, new conversation, streaming messages, stop generation, copy answer, source cards, and citation detail modal
 - Week 6 acceptance flow is connected from login through knowledge base creation, document upload, and chat with citations
 - Backend tests pass and frontend production build passes
+
+## Week 7 Acceptance Status
+
+- Core backend modules are covered by focused unit tests, including chunking, parsing, authentication, permissions, prompt construction, retrieval, reranking, query rewriting, streaming, and service behavior
+- Document ingestion integration tests cover upload, parse, chunk, embed, retrieve, and generate flow
+- End-to-end API tests cover register, login, knowledge base creation, document upload, RAG question answering, and source citation reads
+- RAG evaluation dataset contains 40 labelled enterprise questions with expected answer, document, page, aliases, required terms, and metadata filters
+- Retrieval evaluation metrics can be reproduced with Hit Rate@K, Recall@K, MRR@K, and nDCG@K across vector, hybrid, and hybrid-plus-reranker prediction files
+- Structured JSON logging includes request IDs, user IDs, knowledge base IDs, query text, retrieved chunk IDs, retrieval/rerank/LLM/total latency, token usage, status, and error details
+- API error responses use a unified error object with code, status code, request ID, and details
+- LLM provider calls include bounded retry handling for transient failures, timeout handling, and rate-limit handling
+- Evaluation documentation explains retrieval metric inputs and reliability/error semantics
+- Pytest, Ruff, and mypy pass through `make check`
+
