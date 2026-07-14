@@ -109,6 +109,7 @@ docker-compose.prod.yml  Production-style Docker Compose stack
 - `docs/security.md`: authentication, authorization, upload controls, secrets, logging, and hardening checklist.
 - `docs/demo-data/`: synthetic Markdown documents for the Day 54 local demo flow.
 - `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display.
+- `docs/demo-video.md`: 2-3 minute demonstration script, recording flow, narration, and checklist.
 
 ## Quick Start
 

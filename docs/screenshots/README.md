@@ -16,3 +16,7 @@ Assets:
 - `evaluation-results.svg`
 
 If a browser automation runtime is available later, these can be replaced with pixel screenshots captured from the running app.
+
+Related Day 55 material:
+
+- `../demo-video.md`: recording script and shot list for the 2-3 minute project demo.
