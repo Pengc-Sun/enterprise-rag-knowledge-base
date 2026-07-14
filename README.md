@@ -405,7 +405,7 @@ Release follow-up:
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
 
-Week 3 through Week 7 completion summaries are included below in the acceptance status sections.
+Week 3 through Week 8 completion summaries are included below in the acceptance status sections.
 
 ## Week 1 Acceptance Status
 
@@ -485,6 +485,20 @@ Week 3 through Week 7 completion summaries are included below in the acceptance 
 - LLM provider calls include bounded retry handling for transient failures, timeout handling, and rate-limit handling.
 - Evaluation documentation explains retrieval metric inputs and reliability/error semantics.
 - Pytest, Ruff, and mypy pass through `make check`.
+
+## Week 8 Acceptance Status
+
+- Production-style Docker deployment is configured with PostgreSQL, Redis, Alembic migration, FastAPI backend, and Nginx-served React frontend.
+- Docker startup order is health-gated so PostgreSQL and Redis are ready before migrations, backend startup, and frontend serving.
+- GitHub Actions CI runs backend tests, Ruff, mypy, frontend typecheck/build, and production Docker image build checks.
+- README is complete with overview, features, architecture, RAG pipeline, stack, quick start, environment variables, API guide, evaluation results, screenshots, limitations, roadmap, CI, and license.
+- Detailed documentation is available for architecture, API, deployment, evaluation, and security.
+- GitHub-ready screenshots and diagrams are included for architecture, RAG pipeline, login, knowledge bases, upload, chat, citations, Swagger, GitHub Actions, and evaluation results.
+- Synthetic demo data is included for a repeatable local demo flow.
+- Demo video materials include a 2-3 minute outline, narration script, recording checklist, troubleshooting notes, and release-asset guidance.
+- Changelog, v1.0.0 release notes, repository topic suggestions, tag commands, and CV/interview project copy are prepared.
+- v1.0.0 package/app versions are set across backend, frontend, and OpenAPI metadata.
+- Final validation passed: pytest, Ruff, mypy, frontend typecheck/build, production Docker config/build, retrieval evaluation reproduction, and local secrets scan.
 
 ## CI
 
