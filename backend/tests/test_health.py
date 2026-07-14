@@ -36,7 +36,9 @@ def test_not_found_uses_api_response_format() -> None:
     body = response.json()
     assert body["success"] is False
     assert body["message"] == "Not Found"
-    assert body["data"] is None
+    assert body["data"]["error"]["code"] == "not_found"
+    assert body["data"]["error"]["status_code"] == 404
+    assert body["data"]["error"]["request_id"] is not None
 
 
 class FakeSession:
@@ -61,3 +63,22 @@ def test_api_v1_database_health_check() -> None:
     body = response.json()
     assert body["success"] is True
     assert body["data"] == {"status": "ok", "database": "postgresql"}
+
+
+def test_validation_error_uses_unified_error_shape() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "not-an-email", "username": "u", "password": "short"},
+        headers={"X-Request-ID": "validation-request"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["success"] is False
+    assert body["message"] == "Validation error"
+    assert body["data"]["error"]["code"] == "validation_error"
+    assert body["data"]["error"]["status_code"] == 422
+    assert body["data"]["error"]["request_id"] == "validation-request"
+    assert body["data"]["error"]["details"]["errors"]

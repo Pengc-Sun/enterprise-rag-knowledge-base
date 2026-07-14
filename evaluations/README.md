@@ -53,3 +53,24 @@ make eval-retrieval PREDICTIONS=evaluations/retrieval_predictions.jsonl
 ```
 
 The evaluator reports Hit Rate@K, Recall@K, MRR@K, and nDCG@K. By default a candidate must match both `expected_document` and `expected_page`; pass `--document-only` to the script for document-level evaluation.
+
+## Reliability and Error Handling
+
+Day 49 standardizes failed API responses so evaluation and smoke-test clients can parse errors consistently:
+
+```json
+{
+  "success": false,
+  "message": "LLM provider request timed out",
+  "data": {
+    "error": {
+      "code": "gateway_timeout",
+      "status_code": 504,
+      "request_id": "...",
+      "details": {}
+    }
+  }
+}
+```
+
+LLM calls use bounded retries for transient `5xx`, timeout, and `429` responses. Persistent provider rate limits return HTTP `429` with `code=rate_limited`; persistent provider timeouts return HTTP `504` with `code=gateway_timeout`. Evaluation scripts should treat these rows as failed attempts and keep the `request_id` for log correlation.

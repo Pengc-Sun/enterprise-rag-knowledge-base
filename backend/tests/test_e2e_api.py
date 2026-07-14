@@ -109,6 +109,7 @@ def make_settings() -> SimpleNamespace:
         llm_temperature=0.2,
         llm_max_tokens=1024,
         llm_timeout_seconds=30.0,
+        llm_max_retries=3,
     )
 
 

@@ -15,7 +15,11 @@ from backend.app.models.document import Document, DocumentChunk
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
 from backend.app.services.embeddings import EmbeddingProviderConfigurationError
-from backend.app.services.llms import LLMProviderName
+from backend.app.services.llms import (
+    LLMProviderName,
+    LLMProviderRateLimitError,
+    LLMProviderTimeoutError,
+)
 from backend.app.services.query_rewriting import QueryRewriteResult
 from backend.app.services.rag import RAGAnswer, RAGSourceCitation
 from backend.app.services.rerankers import RerankedChunk
@@ -202,6 +206,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             llm_temperature=0.2,
             llm_max_tokens=1024,
             llm_timeout_seconds=30.0,
+            llm_max_retries=3,
         ),
     )
     set_overrides(user)
@@ -455,6 +460,7 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
             llm_temperature=0.2,
             llm_max_tokens=1024,
             llm_timeout_seconds=30.0,
+            llm_max_retries=3,
         ),
     )
     set_overrides(user)
@@ -470,3 +476,81 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
 
     assert response.status_code == 400
     assert response.json()["message"] == "Embedding provider is not configured"
+
+
+def test_query_knowledge_base_maps_llm_rate_limit_to_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        return knowledge_base
+
+    async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
+        raise LLMProviderRateLimitError
+
+    monkeypatch.setattr(
+        rag_endpoints, "get_knowledge_base_for_user", fake_get_knowledge_base_for_user
+    )
+    monkeypatch.setattr(
+        rag_endpoints, "answer_knowledge_base_question", fake_answer_knowledge_base_question
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            json={"question": "How does RAG work?"},
+            headers={"X-Request-ID": "rate-limit-request"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 429
+    body = response.json()
+    assert body["message"] == "LLM provider rate limit exceeded"
+    assert body["data"]["error"]["code"] == "rate_limited"
+    assert body["data"]["error"]["request_id"] == "rate-limit-request"
+
+
+def test_query_knowledge_base_maps_llm_timeout_to_504(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+
+    async def fake_get_knowledge_base_for_user(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_permissions: frozenset[str],
+    ) -> KnowledgeBase:
+        return knowledge_base
+
+    async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
+        raise LLMProviderTimeoutError
+
+    monkeypatch.setattr(
+        rag_endpoints, "get_knowledge_base_for_user", fake_get_knowledge_base_for_user
+    )
+    monkeypatch.setattr(
+        rag_endpoints, "answer_knowledge_base_question", fake_answer_knowledge_base_question
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            json={"question": "How does RAG work?"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 504
+    body = response.json()
+    assert body["message"] == "LLM provider request timed out"
+    assert body["data"]["error"]["code"] == "gateway_timeout"

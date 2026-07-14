@@ -8,7 +8,9 @@ from backend.app.services.llms import (
     LLMProviderConfigurationError,
     LLMProviderError,
     LLMProviderName,
+    LLMProviderRateLimitError,
     LLMProviderResponseError,
+    LLMProviderTimeoutError,
     LLMUsage,
     OpenAICompatibleLLMProvider,
     UnsupportedLLMProviderError,
@@ -170,3 +172,92 @@ async def test_openai_compatible_provider_wraps_http_errors() -> None:
 def test_parse_chat_response_rejects_invalid_payload() -> None:
     with pytest.raises(LLMProviderResponseError):
         parse_chat_response({}, model="gpt-test", provider_name=LLMProviderName.OPENAI)
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_retries_transient_server_errors() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(500, json={"error": "temporary"})
+        return httpx.Response(
+            200,
+            json={"model": "gpt-test", "choices": [{"message": {"content": "ok"}}]},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleLLMProvider(
+        provider_name=LLMProviderName.OPENAI,
+        model="gpt-test",
+        api_key="secret",
+        client=client,
+        max_retries=2,
+        retry_backoff_seconds=0,
+    )
+
+    try:
+        response = await provider.generate([LLMMessage(role="user", content="hello")])
+    finally:
+        await client.aclose()
+
+    assert attempts == 2
+    assert response.content == "ok"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_reports_rate_limit_after_retries() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, json={"error": "rate limited"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleLLMProvider(
+        provider_name=LLMProviderName.OPENAI,
+        model="gpt-test",
+        api_key="secret",
+        client=client,
+        max_retries=2,
+        retry_backoff_seconds=0,
+    )
+
+    try:
+        with pytest.raises(LLMProviderRateLimitError):
+            await provider.generate([LLMMessage(role="user", content="hello")])
+    finally:
+        await client.aclose()
+
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_reports_timeout_after_retries() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("timed out")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleLLMProvider(
+        provider_name=LLMProviderName.OPENAI,
+        model="gpt-test",
+        api_key="secret",
+        client=client,
+        max_retries=2,
+        retry_backoff_seconds=0,
+    )
+
+    try:
+        with pytest.raises(LLMProviderTimeoutError):
+            await provider.generate([LLMMessage(role="user", content="hello")])
+    finally:
+        await client.aclose()
+
+    assert attempts == 2

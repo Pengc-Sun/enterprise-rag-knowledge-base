@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
@@ -37,6 +38,14 @@ class LLMProviderConfigurationError(LLMProviderError):
 
 class LLMProviderResponseError(LLMProviderError):
     message = "LLM provider returned an invalid response"
+
+
+class LLMProviderTimeoutError(LLMProviderError):
+    message = "LLM provider request timed out"
+
+
+class LLMProviderRateLimitError(LLMProviderError):
+    message = "LLM provider rate limit exceeded"
 
 
 @dataclass(frozen=True)
@@ -102,10 +111,14 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         api_key: str | None,
         base_url: str | None = None,
         timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+        retry_backoff_seconds: float = 0.1,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         validate_model(model)
         validate_timeout(timeout_seconds)
+        validate_max_retries(max_retries)
+        validate_retry_backoff(retry_backoff_seconds)
         if provider_name == LLMProviderName.DETERMINISTIC:
             raise UnsupportedLLMProviderError
 
@@ -114,6 +127,8 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         self.api_key = api_key
         self.base_url = base_url or DEFAULT_BASE_URLS[provider_name]
         self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
         self._client = client
 
     async def generate(
@@ -153,19 +168,55 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         endpoint: str,
         payload: dict[str, object],
     ) -> dict[str, Any]:
-        try:
-            response = await client.post(
-                endpoint,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"{self.provider_name.value} LLM request failed") from exc
-        if not isinstance(data, dict):
-            raise LLMProviderResponseError
-        return data
+        last_error: LLMProviderError | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = await client.post(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                )
+                if response.status_code == 429:
+                    raise LLMProviderRateLimitError
+                if 500 <= response.status_code < 600:
+                    raise LLMProviderError(f"{self.provider_name.value} LLM request failed")
+                response.raise_for_status()
+                data = response.json()
+            except httpx.TimeoutException as exc:
+                last_error = LLMProviderTimeoutError()
+                if attempt >= self.max_retries:
+                    raise last_error from exc
+                await self._sleep_before_retry(attempt)
+                continue
+            except LLMProviderRateLimitError as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    raise
+                await self._sleep_before_retry(attempt)
+                continue
+            except LLMProviderError as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    raise
+                await self._sleep_before_retry(attempt)
+                continue
+            except httpx.HTTPStatusError as exc:
+                raise LLMProviderError(f"{self.provider_name.value} LLM request failed") from exc
+            except httpx.HTTPError as exc:
+                last_error = LLMProviderError(f"{self.provider_name.value} LLM request failed")
+                if attempt >= self.max_retries:
+                    raise last_error from exc
+                await self._sleep_before_retry(attempt)
+                continue
+
+            if not isinstance(data, dict):
+                raise LLMProviderResponseError
+            return data
+
+        raise last_error or LLMProviderError(f"{self.provider_name.value} LLM request failed")
+
+    async def _sleep_before_retry(self, attempt: int) -> None:
+        await asyncio.sleep(self.retry_backoff_seconds * (2 ** (attempt - 1)))
 
 
 def create_llm_provider(settings: "Settings") -> LLMProvider:
@@ -175,6 +226,7 @@ def create_llm_provider(settings: "Settings") -> LLMProvider:
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
         timeout_seconds=settings.llm_timeout_seconds,
+        max_retries=settings.llm_max_retries,
     )
 
 
@@ -184,6 +236,7 @@ def build_llm_provider(
     api_key: str | None = None,
     base_url: str | None = None,
     timeout_seconds: float = 30.0,
+    max_retries: int = 3,
 ) -> LLMProvider:
     validate_model(model)
 
@@ -201,6 +254,7 @@ def build_llm_provider(
         api_key=api_key,
         base_url=base_url,
         timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
     )
 
 
@@ -280,4 +334,14 @@ def validate_model(model: str) -> None:
 
 def validate_timeout(timeout_seconds: float) -> None:
     if timeout_seconds <= 0:
+        raise LLMProviderConfigurationError
+
+
+def validate_max_retries(max_retries: int) -> None:
+    if max_retries <= 0:
+        raise LLMProviderConfigurationError
+
+
+def validate_retry_backoff(retry_backoff_seconds: float) -> None:
+    if retry_backoff_seconds < 0:
         raise LLMProviderConfigurationError

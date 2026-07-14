@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
+from backend.app.api.errors import provider_exception_to_http
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
 from backend.app.models.conversation import Conversation, MessageRole
@@ -178,8 +179,7 @@ async def chat_with_conversation_endpoint(
             max_tokens=settings.llm_max_tokens,
         )
     except (EmbeddingProviderError, LLMProviderError, RerankerError, ValueError) as exc:
-        message = getattr(exc, "message", "Conversation chat failed")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
+        raise provider_exception_to_http(exc, "Conversation chat failed") from exc
 
     user_message = await create_message(
         session,
@@ -326,8 +326,8 @@ async def stream_conversation_answer(
     except asyncio.CancelledError:
         raise
     except (EmbeddingProviderError, LLMProviderError, RerankerError, ValueError) as exc:
-        message = getattr(exc, "message", "Conversation stream failed")
-        yield format_sse_event("error", {"message": message})
+        error = provider_exception_to_http(exc, "Conversation stream failed")
+        yield format_sse_event("error", {"message": error.detail, "status_code": error.status_code})
     except Exception:
         yield format_sse_event("error", {"message": "Conversation stream failed"})
 

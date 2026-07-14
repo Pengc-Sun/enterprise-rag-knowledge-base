@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 30.0
+    llm_max_retries: int = 3
     log_level: str = "INFO"
     log_json: bool = True
 

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
+from backend.app.api.errors import provider_exception_to_http
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
 from backend.app.models.user import User
@@ -72,8 +73,7 @@ async def query_knowledge_base_endpoint(
             max_tokens=settings.llm_max_tokens,
         )
     except (EmbeddingProviderError, LLMProviderError, RerankerError, ValueError) as exc:
-        message = getattr(exc, "message", "RAG query failed")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
+        raise provider_exception_to_http(exc, "RAG query failed") from exc
 
     return success_response(
         RAGQueryResponse(
@@ -134,8 +134,7 @@ async def debug_knowledge_base_retrieval_endpoint(
             metadata_filter=build_retrieval_metadata_filter(query_request.filters),
         )
     except (EmbeddingProviderError, RerankerError, ValueError) as exc:
-        message = getattr(exc, "message", "Retrieval debug query failed")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
+        raise provider_exception_to_http(exc, "Retrieval debug query failed") from exc
 
     return success_response(
         RAGRetrievalDebugResponse(
