@@ -5,19 +5,105 @@ on:
     branches: ["main"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  backend:
+  backend-tests:
+    name: Backend tests
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: make install
 
-      - name: Run checks
-        run: make check
+      - name: Run pytest
+        run: make test
+
+  ruff:
+    name: Ruff lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: make install
+
+      - name: Run Ruff
+        run: make lint
+
+  mypy:
+    name: mypy typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: make install
+
+      - name: Run mypy
+        run: make typecheck
+
+  frontend:
+    name: Frontend typecheck and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Run frontend typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm build
+
+  docker-build:
+    name: Production Docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate production Compose config
+        run: make docker-prod-config
+
+      - name: Build production images
+        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml build backend frontend
