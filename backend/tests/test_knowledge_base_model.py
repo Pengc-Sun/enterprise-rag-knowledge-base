@@ -51,3 +51,23 @@ def test_knowledge_base_member_relationship() -> None:
     assert member in knowledge_base.members
     assert member in user.knowledge_base_memberships
     assert member.permission == "viewer"
+
+
+def test_knowledge_base_accepts_nullable_workspace_id() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base = KnowledgeBase(
+        name="Engineering Handbook",
+        owner_id=uuid.uuid4(),
+        workspace_id=workspace_id,
+    )
+
+    assert knowledge_base.workspace_id == workspace_id
+
+
+def test_knowledge_base_workspace_id_defaults_to_none() -> None:
+    knowledge_base = KnowledgeBase(
+        name="Engineering Handbook",
+        owner_id=uuid.uuid4(),
+    )
+
+    assert knowledge_base.workspace_id is None

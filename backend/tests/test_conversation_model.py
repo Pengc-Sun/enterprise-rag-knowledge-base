@@ -45,3 +45,25 @@ def test_conversation_and_message_relationships() -> None:
     assert message in conversation.messages
     assert message.role == "user"
     assert message.sources == []
+
+
+def test_conversation_accepts_nullable_workspace_id() -> None:
+    workspace_id = uuid.uuid4()
+    conversation = Conversation(
+        user_id=uuid.uuid4(),
+        knowledge_base_id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        title="Travel policy",
+    )
+
+    assert conversation.workspace_id == workspace_id
+
+
+def test_conversation_workspace_id_defaults_to_none() -> None:
+    conversation = Conversation(
+        user_id=uuid.uuid4(),
+        knowledge_base_id=uuid.uuid4(),
+        title="Travel policy",
+    )
+
+    assert conversation.workspace_id is None

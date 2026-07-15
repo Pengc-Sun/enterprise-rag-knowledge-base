@@ -119,3 +119,58 @@ def test_document_chunk_embedding_status_defaults() -> None:
     assert ChunkEmbeddingStatus.PENDING.value == "pending"
     assert chunk.embedding is None
     assert chunk.embedding_error is None
+
+
+def test_document_and_chunk_accept_nullable_workspace_id() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    document = Document(
+        id=uuid.uuid4(),
+        knowledge_base_id=knowledge_base_id,
+        workspace_id=workspace_id,
+        filename="architecture.pdf",
+        file_type="pdf",
+        file_size=2048,
+        file_hash="sha256:architecture",
+        storage_path="knowledge-bases/engineering/architecture.pdf",
+        status=DocumentStatus.UPLOADED.value,
+        created_by=uuid.uuid4(),
+    )
+    chunk = DocumentChunk(
+        document_id=document.id,
+        knowledge_base_id=knowledge_base_id,
+        workspace_id=workspace_id,
+        content="Architecture overview",
+        chunk_index=0,
+        page_number=1,
+        token_count=2,
+        chunk_metadata={},
+    )
+
+    assert document.workspace_id == workspace_id
+    assert chunk.workspace_id == workspace_id
+
+
+def test_document_and_chunk_workspace_id_defaults_to_none() -> None:
+    document = Document(
+        knowledge_base_id=uuid.uuid4(),
+        filename="architecture.pdf",
+        file_type="pdf",
+        file_size=2048,
+        file_hash="sha256:architecture",
+        storage_path="knowledge-bases/engineering/architecture.pdf",
+        status=DocumentStatus.UPLOADED.value,
+        created_by=uuid.uuid4(),
+    )
+    chunk = DocumentChunk(
+        document_id=uuid.uuid4(),
+        knowledge_base_id=uuid.uuid4(),
+        content="Architecture overview",
+        chunk_index=0,
+        page_number=1,
+        token_count=2,
+        chunk_metadata={},
+    )
+
+    assert document.workspace_id is None
+    assert chunk.workspace_id is None

@@ -40,6 +40,7 @@ class KnowledgeBase(Base):
         index=True,
         nullable=False,
     )
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     visibility: Mapped[str] = mapped_column(
         String(50),
         default=KnowledgeBaseVisibility.PRIVATE.value,
