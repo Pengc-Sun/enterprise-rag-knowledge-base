@@ -62,3 +62,40 @@ def test_day10_backfill_migration_updates_v1_relationships_in_order() -> None:
     assert "update conversations" in conversation_sql
     assert "conversations.knowledge_base_id = knowledge_bases.id" in conversation_sql
     assert "set workspace_id = null" in clear_conversation_sql
+
+
+def test_day11_require_workspace_ids_adds_constraints_and_indexes() -> None:
+    migration = load_migration(
+        "migration_0016",
+        "20260715_0016_require_workspace_ids.py",
+    )
+
+    assert migration.revision == "0016"
+    assert migration.down_revision == "0015"
+    assert migration.WORKSPACE_SCOPED_TABLES == (
+        "knowledge_bases",
+        "documents",
+        "document_chunks",
+        "conversations",
+    )
+
+    assert migration.WORKSPACE_INDEXES["knowledge_bases"] == "ix_knowledge_bases_workspace_id"
+    assert migration.WORKSPACE_INDEXES["documents"] == "ix_documents_workspace_id"
+    assert migration.WORKSPACE_INDEXES["document_chunks"] == "ix_document_chunks_workspace_id"
+    assert migration.WORKSPACE_INDEXES["conversations"] == "ix_conversations_workspace_id"
+    assert (
+        migration.WORKSPACE_FOREIGN_KEYS["knowledge_bases"]
+        == "fk_knowledge_bases_workspace_id_workspaces"
+    )
+    assert (
+        migration.WORKSPACE_FOREIGN_KEYS["documents"]
+        == "fk_documents_workspace_id_workspaces"
+    )
+    assert (
+        migration.WORKSPACE_FOREIGN_KEYS["document_chunks"]
+        == "fk_document_chunks_workspace_id_workspaces"
+    )
+    assert (
+        migration.WORKSPACE_FOREIGN_KEYS["conversations"]
+        == "fk_conversations_workspace_id_workspaces"
+    )
