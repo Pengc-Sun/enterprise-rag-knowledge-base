@@ -34,3 +34,31 @@ def test_day9_default_workspace_migration_targets_v1_owners() -> None:
     assert ":default-workspace" not in member_sql
     assert "insert into workspace_members" in member_sql
     assert "'owner'" in member_sql
+
+
+def test_day10_backfill_migration_updates_v1_relationships_in_order() -> None:
+    migration = load_migration(
+        "migration_0015",
+        "20260715_0015_backfill_v1_data_workspace_ids.py",
+    )
+
+    assert migration.revision == "0015"
+    assert migration.down_revision == "0014"
+    assert migration.DEFAULT_WORKSPACE_SLUG_PREFIX == "v1-default-"
+
+    knowledge_base_sql = str(migration.BACKFILL_KNOWLEDGE_BASE_WORKSPACES_SQL).lower()
+    document_sql = str(migration.BACKFILL_DOCUMENT_WORKSPACES_SQL).lower()
+    chunk_sql = str(migration.BACKFILL_CHUNK_WORKSPACES_SQL).lower()
+    conversation_sql = str(migration.BACKFILL_CONVERSATION_WORKSPACES_SQL).lower()
+    clear_conversation_sql = str(migration.CLEAR_CONVERSATION_WORKSPACES_SQL).lower()
+
+    assert "update knowledge_bases" in knowledge_base_sql
+    assert "workspaces.slug" in knowledge_base_sql
+    assert "knowledge_bases.workspace_id is null" in knowledge_base_sql
+    assert "update documents" in document_sql
+    assert "documents.knowledge_base_id = knowledge_bases.id" in document_sql
+    assert "update document_chunks" in chunk_sql
+    assert "document_chunks.document_id = documents.id" in chunk_sql
+    assert "update conversations" in conversation_sql
+    assert "conversations.knowledge_base_id = knowledge_bases.id" in conversation_sql
+    assert "set workspace_id = null" in clear_conversation_sql
