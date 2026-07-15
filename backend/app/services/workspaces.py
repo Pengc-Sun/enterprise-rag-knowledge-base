@@ -27,6 +27,23 @@ WRITE_ROLES = frozenset(
     }
 )
 OWNER_ROLES = frozenset({WorkspaceMemberRole.OWNER.value})
+MEMBER_MANAGEMENT_ROLES = WRITE_ROLES
+ASSIGNABLE_MEMBER_ROLES = frozenset(
+    {
+        WorkspaceMemberRole.ADMIN.value,
+        WorkspaceMemberRole.EDITOR.value,
+        WorkspaceMemberRole.REVIEWER.value,
+        WorkspaceMemberRole.VIEWER.value,
+    }
+)
+
+
+class WorkspaceMemberRoleError(ValueError):
+    message = "Workspace owner role cannot be managed through member endpoints"
+
+
+class WorkspaceOwnerMemberError(ValueError):
+    message = "Workspace owner membership cannot be modified through member endpoints"
 
 
 async def create_workspace(
@@ -122,3 +139,82 @@ async def update_workspace(
 async def delete_workspace(session: AsyncSession, workspace: Workspace) -> None:
     await session.delete(workspace)
     await session.commit()
+
+
+async def list_workspace_members(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> list[WorkspaceMember]:
+    result = await session.execute(
+        select(WorkspaceMember)
+        .where(WorkspaceMember.workspace_id == workspace_id)
+        .order_by(WorkspaceMember.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_workspace_member(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> WorkspaceMember | None:
+    result = await session.execute(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def add_workspace_member(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: WorkspaceMemberRole,
+) -> WorkspaceMember:
+    role_value = validate_assignable_member_role(role)
+    member = WorkspaceMember(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role_value,
+    )
+    session.add(member)
+    await session.commit()
+    await session.refresh(member)
+    return member
+
+
+async def update_workspace_member_role(
+    session: AsyncSession,
+    workspace: Workspace,
+    member: WorkspaceMember,
+    role: WorkspaceMemberRole,
+) -> WorkspaceMember:
+    ensure_not_workspace_owner(workspace, member)
+    member.role = validate_assignable_member_role(role)
+    await session.commit()
+    await session.refresh(member)
+    return member
+
+
+async def remove_workspace_member(
+    session: AsyncSession,
+    workspace: Workspace,
+    member: WorkspaceMember,
+) -> None:
+    ensure_not_workspace_owner(workspace, member)
+    await session.delete(member)
+    await session.commit()
+
+
+def validate_assignable_member_role(role: WorkspaceMemberRole) -> str:
+    role_value = role.value
+    if role_value not in ASSIGNABLE_MEMBER_ROLES:
+        raise WorkspaceMemberRoleError
+    return role_value
+
+
+def ensure_not_workspace_owner(workspace: Workspace, member: WorkspaceMember) -> None:
+    if member.user_id == workspace.owner_id or member.role == WorkspaceMemberRole.OWNER.value:
+        raise WorkspaceOwnerMemberError

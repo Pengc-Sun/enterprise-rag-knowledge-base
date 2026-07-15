@@ -3,14 +3,24 @@ from datetime import UTC, datetime
 
 import pytest
 
-from backend.app.models.workspace import Workspace, WorkspaceMemberRole, WorkspaceStatus
+from backend.app.models.workspace import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceMemberRole,
+    WorkspaceStatus,
+)
 from backend.app.schemas.workspace import WorkspaceCreate, WorkspaceUpdate
 from backend.app.services.workspaces import (
     OWNER_ROLES,
     READ_ROLES,
     WRITE_ROLES,
+    WorkspaceMemberRoleError,
+    WorkspaceOwnerMemberError,
+    add_workspace_member,
     get_workspace_for_user,
+    remove_workspace_member,
     update_workspace,
+    update_workspace_member_role,
 )
 
 
@@ -126,3 +136,138 @@ async def test_get_workspace_for_user_returns_none_when_missing() -> None:
     )
 
     assert result is None
+
+
+class FakeMemberSession:
+    def __init__(self) -> None:
+        self.added: object | None = None
+        self.deleted: object | None = None
+        self.committed = False
+        self.refreshed = False
+
+    def add(self, instance: object) -> None:
+        self.added = instance
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, instance: object) -> None:
+        self.refreshed = True
+
+    async def delete(self, instance: object) -> None:
+        self.deleted = instance
+
+
+def make_workspace_member(
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: WorkspaceMemberRole = WorkspaceMemberRole.VIEWER,
+) -> WorkspaceMember:
+    now = datetime.now(UTC)
+    return WorkspaceMember(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_workspace_member_rejects_owner_role() -> None:
+    session = FakeMemberSession()
+
+    with pytest.raises(WorkspaceMemberRoleError):
+        await add_workspace_member(
+            session,  # type: ignore[arg-type]
+            uuid.uuid4(),
+            uuid.uuid4(),
+            WorkspaceMemberRole.OWNER,
+        )
+
+    assert session.added is None
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_add_workspace_member_persists_assignable_role() -> None:
+    session = FakeMemberSession()
+    workspace_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    member = await add_workspace_member(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        user_id,
+        WorkspaceMemberRole.REVIEWER,
+    )
+
+    assert member.workspace_id == workspace_id
+    assert member.user_id == user_id
+    assert member.role == "reviewer"
+    assert session.added is member
+    assert session.committed is True
+    assert session.refreshed is True
+
+
+@pytest.mark.asyncio
+async def test_update_workspace_member_role_rejects_workspace_owner() -> None:
+    workspace = make_workspace()
+    member = make_workspace_member(
+        workspace.id,
+        workspace.owner_id,
+        WorkspaceMemberRole.OWNER,
+    )
+    session = FakeMemberSession()
+
+    with pytest.raises(WorkspaceOwnerMemberError):
+        await update_workspace_member_role(
+            session,  # type: ignore[arg-type]
+            workspace,
+            member,
+            WorkspaceMemberRole.ADMIN,
+        )
+
+    assert member.role == "owner"
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_update_workspace_member_role_updates_assignable_role() -> None:
+    workspace = make_workspace()
+    member = make_workspace_member(workspace.id, uuid.uuid4(), WorkspaceMemberRole.VIEWER)
+    session = FakeMemberSession()
+
+    updated_member = await update_workspace_member_role(
+        session,  # type: ignore[arg-type]
+        workspace,
+        member,
+        WorkspaceMemberRole.EDITOR,
+    )
+
+    assert updated_member is member
+    assert member.role == "editor"
+    assert session.committed is True
+    assert session.refreshed is True
+
+
+@pytest.mark.asyncio
+async def test_remove_workspace_member_rejects_workspace_owner() -> None:
+    workspace = make_workspace()
+    member = make_workspace_member(
+        workspace.id,
+        workspace.owner_id,
+        WorkspaceMemberRole.OWNER,
+    )
+    session = FakeMemberSession()
+
+    with pytest.raises(WorkspaceOwnerMemberError):
+        await remove_workspace_member(
+            session,  # type: ignore[arg-type]
+            workspace,
+            member,
+        )
+
+    assert session.deleted is None
+    assert session.committed is False

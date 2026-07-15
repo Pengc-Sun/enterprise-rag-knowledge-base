@@ -11,8 +11,17 @@ from backend.app.api.v1.endpoints import workspaces as workspace_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
 from backend.app.models.user import User, UserRole
-from backend.app.models.workspace import Workspace, WorkspaceStatus
-from backend.app.schemas.workspace import WorkspaceCreate, WorkspaceUpdate
+from backend.app.models.workspace import (
+    Workspace,
+    WorkspaceMember,
+    WorkspaceMemberRole,
+    WorkspaceStatus,
+)
+from backend.app.schemas.workspace import (
+    WorkspaceCreate,
+    WorkspaceUpdate,
+)
+from backend.app.services.workspaces import WorkspaceMemberRoleError
 
 
 def make_user() -> User:
@@ -259,3 +268,300 @@ def test_read_workspace_returns_404_when_not_member(monkeypatch: pytest.MonkeyPa
     body = response.json()
     assert body["success"] is False
     assert body["message"] == "Workspace not found"
+
+
+def make_member(
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: WorkspaceMemberRole = WorkspaceMemberRole.VIEWER,
+) -> WorkspaceMember:
+    now = datetime.now(UTC)
+    return WorkspaceMember(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        user_id=user_id,
+        role=role.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def test_list_workspace_members(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    member = make_member(workspace.id, user.id, WorkspaceMemberRole.OWNER)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert "viewer" in allowed_roles
+        return workspace
+
+    async def fake_list_workspace_members(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+    ) -> list[WorkspaceMember]:
+        assert workspace_id == workspace.id
+        return [member]
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "list_workspace_members", fake_list_workspace_members)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/workspaces/{workspace.id}/members")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"][0]["role"] == "owner"
+
+
+def test_add_workspace_member(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    new_user = make_user()
+    new_user.id = uuid.uuid4()
+    workspace = make_workspace(user.id)
+    member = make_member(workspace.id, new_user.id, WorkspaceMemberRole.REVIEWER)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert "admin" in allowed_roles
+        return workspace
+
+    async def fake_get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> User:
+        assert user_id == new_user.id
+        return new_user
+
+    async def fake_add_workspace_member(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        role: WorkspaceMemberRole,
+    ) -> WorkspaceMember:
+        assert workspace_id == workspace.id
+        assert user_id == new_user.id
+        assert role == WorkspaceMemberRole.REVIEWER
+        return member
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "get_user_by_id", fake_get_user_by_id)
+    monkeypatch.setattr(workspace_endpoints, "add_workspace_member", fake_add_workspace_member)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/members",
+            json={"user_id": str(new_user.id), "role": "reviewer"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["message"] == "workspace member added"
+    assert body["data"]["user_id"] == str(new_user.id)
+    assert body["data"]["role"] == "reviewer"
+
+
+def test_add_workspace_member_returns_404_when_user_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    missing_user_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> None:
+        return None
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "get_user_by_id", fake_get_user_by_id)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/members",
+            json={"user_id": str(missing_user_id), "role": "viewer"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "User not found"
+
+
+def test_update_workspace_member(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    member_user_id = uuid.uuid4()
+    workspace = make_workspace(user.id)
+    member = make_member(workspace.id, member_user_id, WorkspaceMemberRole.VIEWER)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert "admin" in allowed_roles
+        return workspace
+
+    async def fake_get_workspace_member(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> WorkspaceMember:
+        assert user_id == member_user_id
+        return member
+
+    async def fake_update_workspace_member_role(
+        session: AsyncSession,
+        workspace: Workspace,
+        member: WorkspaceMember,
+        role: WorkspaceMemberRole,
+    ) -> WorkspaceMember:
+        member.role = role.value
+        return member
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_member", fake_get_workspace_member)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "update_workspace_member_role",
+        fake_update_workspace_member_role,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/members/{member_user_id}",
+            json={"role": "editor"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "workspace member updated"
+    assert body["data"]["role"] == "editor"
+
+
+def test_update_workspace_member_rejects_owner_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    member_user_id = uuid.uuid4()
+    workspace = make_workspace(user.id)
+    member = make_member(workspace.id, member_user_id, WorkspaceMemberRole.VIEWER)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_member(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> WorkspaceMember:
+        return member
+
+    async def fake_update_workspace_member_role(
+        session: AsyncSession,
+        workspace: Workspace,
+        member: WorkspaceMember,
+        role: WorkspaceMemberRole,
+    ) -> WorkspaceMember:
+        raise WorkspaceMemberRoleError
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_member", fake_get_workspace_member)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "update_workspace_member_role",
+        fake_update_workspace_member_role,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/members/{member_user_id}",
+            json={"role": "owner"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert "owner role" in response.json()["message"]
+
+
+def test_remove_workspace_member(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    member_user_id = uuid.uuid4()
+    workspace = make_workspace(user.id)
+    member = make_member(workspace.id, member_user_id, WorkspaceMemberRole.VIEWER)
+    removed = False
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_member(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> WorkspaceMember:
+        return member
+
+    async def fake_remove_workspace_member(
+        session: AsyncSession,
+        workspace: Workspace,
+        member: WorkspaceMember,
+    ) -> None:
+        nonlocal removed
+        removed = True
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_member", fake_get_workspace_member)
+    monkeypatch.setattr(
+        workspace_endpoints, "remove_workspace_member", fake_remove_workspace_member
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.delete(f"/api/v1/workspaces/{workspace.id}/members/{member_user_id}")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert removed is True
