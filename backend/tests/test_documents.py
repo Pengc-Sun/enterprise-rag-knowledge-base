@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import cast
@@ -15,6 +16,7 @@ from backend.app.main import app
 from backend.app.models.document import Document
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.models.workspace import Workspace
 from backend.app.services.documents import DuplicateDocumentError
 
 
@@ -32,26 +34,43 @@ def make_user() -> User:
     )
 
 
-def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
+def make_workspace(owner_id: uuid.UUID) -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace(
+        id=uuid.uuid4(),
+        name="Policy Workspace",
+        slug=f"policy-{str(owner_id).replace('-', '')}",
+        owner_id=owner_id,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_knowledge_base(owner_id: uuid.UUID, workspace_id: uuid.UUID) -> KnowledgeBase:
     now = datetime.now(UTC)
     return KnowledgeBase(
         id=uuid.uuid4(),
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
     )
 
 
-def make_document(knowledge_base_id: uuid.UUID, created_by: uuid.UUID) -> Document:
+def make_document(
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    created_by: uuid.UUID,
+) -> Document:
     now = datetime.now(UTC)
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         filename="architecture.pdf",
         file_type="pdf",
         file_size=1024,
@@ -81,21 +100,104 @@ def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatch) -> None:
-    user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    document = make_document(knowledge_base.id, user.id)
+def assert_read_roles(roles: frozenset[str]) -> None:
+    assert "viewer" in roles
 
-    async def fake_get_knowledge_base_for_user(
+
+def assert_write_roles(roles: frozenset[str]) -> None:
+    assert "admin" in roles
+    assert "viewer" not in roles
+
+
+def patch_workspace_access(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    workspace: Workspace | None,
+    expected_roles: Callable[[frozenset[str]], None] | None = None,
+) -> None:
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace | None:
+        if workspace is not None:
+            assert workspace_id == workspace.id
+            assert user_id == workspace.owner_id
+        if expected_roles is not None:
+            expected_roles(allowed_roles)
+        return workspace
+
+    monkeypatch.setattr(document_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+
+
+def patch_knowledge_base(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    knowledge_base: KnowledgeBase | None,
+) -> None:
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert allowed_permissions == frozenset({"owner", "editor"})
+        workspace_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        if knowledge_base is not None:
+            assert knowledge_base_id == knowledge_base.id
+            assert workspace_id == knowledge_base.workspace_id
         return knowledge_base
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+
+
+def patch_document(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    document: Document | None,
+) -> None:
+    async def fake_get_document_for_workspace_knowledge_base(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> Document | None:
+        if document is not None:
+            assert workspace_id == document.workspace_id
+            assert knowledge_base_id == document.knowledge_base_id
+            assert document_id == document.id
+        return document
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_workspace_knowledge_base",
+        fake_get_document_for_workspace_knowledge_base,
+    )
+
+
+def patch_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_settings",
+        lambda: SimpleNamespace(
+            upload_dir="storage/uploads",
+            max_upload_size_bytes=10 * 1024 * 1024,
+            embedding_batch_size=32,
+            embedding_max_retries=3,
+        ),
+    )
+
+
+def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_create_document_from_upload(
         session: AsyncSession,
@@ -106,6 +208,7 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
         max_file_size_bytes: int,
     ) -> Document:
         assert current_user is user
+        assert knowledge_base.workspace_id == workspace.id
         assert upload_file.filename == "architecture.pdf"
         assert upload_file.content_type == "application/pdf"
         assert upload_dir == "storage/uploads"
@@ -123,9 +226,62 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(
         document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "create_document_from_upload",
+        fake_create_document_from_upload,
     )
+    monkeypatch.setattr(
+        document_endpoints,
+        "process_document_for_retrieval",
+        fake_process_document_for_retrieval,
+    )
+    patch_settings(monkeypatch)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents?workspace_id={workspace.id}",
+            files={"file": ("architecture.pdf", b"content", "application/pdf")},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["success"] is True
+    assert body["message"] == "document uploaded and processed"
+    assert body["data"]["workspace_id"] == str(workspace.id)
+    assert body["data"]["filename"] == "architecture.pdf"
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["chunk_count"] == 2
+
+
+def test_upload_workspace_document_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+
+    async def fake_create_document_from_upload(
+        session: AsyncSession,
+        knowledge_base: KnowledgeBase,
+        current_user: User,
+        upload_file: UploadFile,
+        upload_dir: str,
+        max_file_size_bytes: int,
+    ) -> Document:
+        return document
+
+    async def fake_process_document_for_retrieval(
+        session: AsyncSession,
+        document_arg: Document,
+        settings: SimpleNamespace,
+    ) -> tuple[Document, int]:
+        return document_arg, 1
+
     monkeypatch.setattr(
         document_endpoints,
         "create_document_from_upload",
@@ -136,51 +292,25 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
         "process_document_for_retrieval",
         fake_process_document_for_retrieval,
     )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_settings",
-        lambda: SimpleNamespace(
-            upload_dir="storage/uploads",
-            max_upload_size_bytes=10 * 1024 * 1024,
-        ),
-    )
+    patch_settings(monkeypatch)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/{knowledge_base.id}/documents",
             files={"file": ("architecture.pdf", b"content", "application/pdf")},
         )
     finally:
         clear_overrides()
 
     assert response.status_code == 201
-    body = response.json()
-    assert body["success"] is True
-    assert body["message"] == "document uploaded and processed"
-    assert body["data"]["filename"] == "architecture.pdf"
-    assert body["data"]["status"] == "completed"
-    assert body["data"]["chunk_count"] == 2
+    assert response.json()["data"]["workspace_id"] == str(workspace.id)
 
 
-def test_upload_document_requires_write_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upload_document_without_workspace_id_returns_422() -> None:
     user = make_user()
     knowledge_base_id = uuid.uuid4()
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
     set_overrides(user)
 
     try:
@@ -192,21 +322,37 @@ def test_upload_document_requires_write_permission(monkeypatch: pytest.MonkeyPat
     finally:
         clear_overrides()
 
+    assert response.status_code == 422
+
+
+def test_upload_document_requires_workspace_write_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base_id = uuid.uuid4()
+
+    patch_workspace_access(monkeypatch, workspace=None)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/knowledge-bases/{knowledge_base_id}/documents?workspace_id={workspace.id}",
+            files={"file": ("architecture.pdf", b"content", "application/pdf")},
+        )
+    finally:
+        clear_overrides()
+
     assert response.status_code == 404
-    assert response.json()["message"] == "Knowledge base not found"
+    assert response.json()["message"] == "Workspace not found"
 
 
 def test_upload_document_rejects_duplicate_document(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_create_document_from_upload(
         session: AsyncSession,
@@ -220,28 +366,16 @@ def test_upload_document_rejects_duplicate_document(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(
         document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
         "create_document_from_upload",
         fake_create_document_from_upload,
     )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_settings",
-        lambda: SimpleNamespace(
-            upload_dir="storage/uploads",
-            max_upload_size_bytes=10 * 1024 * 1024,
-        ),
-    )
+    patch_settings(monkeypatch)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents?workspace_id={workspace.id}",
             files={"file": ("architecture.pdf", b"content", "application/pdf")},
         )
     finally:
@@ -251,29 +385,81 @@ def test_upload_document_rejects_duplicate_document(monkeypatch: pytest.MonkeyPa
     assert response.json()["message"] == "Document already exists"
 
 
+def test_list_documents_returns_chunk_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_read_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+
+    async def fake_list_documents_for_workspace_knowledge_base(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        knowledge_base_id: uuid.UUID,
+    ) -> list[tuple[Document, int]]:
+        assert workspace_id == workspace.id
+        assert knowledge_base_id == knowledge_base.id
+        return [(document, 3)]
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "list_documents_for_workspace_knowledge_base",
+        fake_list_documents_for_workspace_knowledge_base,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents?workspace_id={workspace.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"][0]["workspace_id"] == str(workspace.id)
+    assert body["data"][0]["filename"] == "architecture.pdf"
+    assert body["data"][0]["chunk_count"] == 3
+
+
+def test_read_document_returns_document_in_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_read_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+    patch_document(monkeypatch, document=document)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document.id}"
+            f"?workspace_id={workspace.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["data"]["id"] == str(document.id)
+
+
 def test_reprocess_document_returns_processed_document(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    document = make_document(knowledge_base.id, user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
     document.status = "completed"
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert allowed_permissions == frozenset({"owner", "editor"})
-        return knowledge_base
-
-    async def fake_get_document_for_knowledge_base(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        document_id: uuid.UUID,
-    ) -> Document:
-        assert knowledge_base_id == knowledge_base.id
-        assert document_id == document.id
-        return document
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+    patch_document(monkeypatch, document=document)
 
     async def fake_process_document_for_retrieval(
         session: AsyncSession,
@@ -285,16 +471,6 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(
         document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_document_for_knowledge_base",
-        fake_get_document_for_knowledge_base,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
         "process_document_for_retrieval",
         fake_process_document_for_retrieval,
     )
@@ -304,6 +480,7 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
         client = TestClient(app)
         response = client.post(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document.id}/reprocess"
+            f"?workspace_id={workspace.id}"
         )
     finally:
         clear_overrides()
@@ -316,44 +493,24 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
     assert body["data"]["chunk_count"] == 4
 
 
-def test_reprocess_document_returns_404_for_missing_document(
+def test_reprocess_document_returns_404_for_cross_workspace_document(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
     document_id = uuid.uuid4()
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
-
-    async def fake_get_document_for_knowledge_base(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        document_id: uuid.UUID,
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_document_for_knowledge_base",
-        fake_get_document_for_knowledge_base,
-    )
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+    patch_document(monkeypatch, document=None)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.post(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document_id}/reprocess"
+            f"?workspace_id={workspace.id}"
         )
     finally:
         clear_overrides()
@@ -362,94 +519,21 @@ def test_reprocess_document_returns_404_for_missing_document(
     assert response.json()["message"] == "Document not found"
 
 
-def test_list_documents_returns_chunk_counts(monkeypatch: pytest.MonkeyPatch) -> None:
-    user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    document = make_document(knowledge_base.id, user.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert allowed_permissions == frozenset({"owner", "editor", "viewer"})
-        return knowledge_base
-
-    async def fake_list_documents_for_knowledge_base(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-    ) -> list[tuple[Document, int]]:
-        assert knowledge_base_id == knowledge_base.id
-        return [(document, 3)]
-
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
-        "list_documents_for_knowledge_base",
-        fake_list_documents_for_knowledge_base,
-    )
-    set_overrides(user)
-
-    try:
-        client = TestClient(app)
-        response = client.get(f"/api/v1/knowledge-bases/{knowledge_base.id}/documents")
-    finally:
-        clear_overrides()
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert body["data"][0]["filename"] == "architecture.pdf"
-    assert body["data"][0]["chunk_count"] == 3
-
-
 def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    document = make_document(knowledge_base.id, user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    document = make_document(knowledge_base.id, workspace.id, user.id)
     deleted_document: Document | None = None
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert allowed_permissions == frozenset({"owner", "editor"})
-        return knowledge_base
-
-    async def fake_get_document_for_knowledge_base(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        document_id: uuid.UUID,
-    ) -> Document:
-        assert knowledge_base_id == knowledge_base.id
-        assert document_id == document.id
-        return document
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+    patch_document(monkeypatch, document=document)
 
     async def fake_delete_document(session: AsyncSession, document_arg: Document) -> None:
         nonlocal deleted_document
         deleted_document = document_arg
 
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_document_for_knowledge_base",
-        fake_get_document_for_knowledge_base,
-    )
     monkeypatch.setattr(document_endpoints, "delete_document", fake_delete_document)
     set_overrides(user)
 
@@ -457,6 +541,7 @@ def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> 
         client = TestClient(app)
         response = client.delete(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document.id}"
+            f"?workspace_id={workspace.id}"
         )
     finally:
         clear_overrides()
@@ -468,40 +553,20 @@ def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_delete_document_returns_404_for_missing_document(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
     document_id = uuid.uuid4()
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
-
-    async def fake_get_document_for_knowledge_base(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        document_id: uuid.UUID,
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        document_endpoints,
-        "get_document_for_knowledge_base",
-        fake_get_document_for_knowledge_base,
-    )
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+    patch_document(monkeypatch, document=None)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.delete(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document_id}"
+            f"?workspace_id={workspace.id}"
         )
     finally:
         clear_overrides()

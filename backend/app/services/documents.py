@@ -166,6 +166,22 @@ async def get_document_for_knowledge_base(
     return result.scalar_one_or_none()
 
 
+async def get_document_for_workspace_knowledge_base(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> Document | None:
+    result = await session.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.workspace_id == workspace_id,
+            Document.knowledge_base_id == knowledge_base_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_documents_for_knowledge_base(
     session: AsyncSession,
     knowledge_base_id: uuid.UUID,
@@ -174,6 +190,28 @@ async def list_documents_for_knowledge_base(
         select(Document, func.count(DocumentChunk.id).label("chunk_count"))
         .outerjoin(DocumentChunk, DocumentChunk.document_id == Document.id)
         .where(Document.knowledge_base_id == knowledge_base_id)
+        .group_by(Document.id)
+        .order_by(Document.created_at.desc())
+    )
+    return [(document, int(chunk_count)) for document, chunk_count in result.all()]
+
+
+async def list_documents_for_workspace_knowledge_base(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+) -> list[tuple[Document, int]]:
+    result = await session.execute(
+        select(Document, func.count(DocumentChunk.id).label("chunk_count"))
+        .outerjoin(
+            DocumentChunk,
+            (DocumentChunk.document_id == Document.id)
+            & (DocumentChunk.workspace_id == workspace_id),
+        )
+        .where(
+            Document.workspace_id == workspace_id,
+            Document.knowledge_base_id == knowledge_base_id,
+        )
         .group_by(Document.id)
         .order_by(Document.created_at.desc())
     )

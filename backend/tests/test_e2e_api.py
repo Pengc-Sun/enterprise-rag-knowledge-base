@@ -45,12 +45,16 @@ def make_user(email: str, username: str) -> User:
     )
 
 
-def make_document(knowledge_base_id: uuid.UUID, user_id: uuid.UUID) -> Document:
+def make_document(
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Document:
     now = datetime.now(UTC)
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         filename="travel_policy.txt",
         file_type="txt",
         file_size=95,
@@ -187,6 +191,16 @@ def test_register_login_create_upload_query_and_read_sources(
         assert knowledge_base_id == knowledge_base.id
         return knowledge_base
 
+    async def fake_get_knowledge_base_for_workspace(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        knowledge_base = cast(KnowledgeBase, state["knowledge_base"])
+        assert knowledge_base_id == knowledge_base.id
+        assert workspace_id == knowledge_base.workspace_id
+        return knowledge_base
+
     async def fake_create_document_from_upload(
         session: AsyncSession,
         knowledge_base: KnowledgeBase,
@@ -199,7 +213,7 @@ def test_register_login_create_upload_query_and_read_sources(
         assert upload_file.content_type == "text/plain"
         assert upload_dir == "storage/uploads"
         assert max_file_size_bytes == 10 * 1024 * 1024
-        document = make_document(knowledge_base.id, current_user.id)
+        document = make_document(knowledge_base.id, knowledge_base.workspace_id, current_user.id)
         state["document"] = document
         return document
 
@@ -270,8 +284,13 @@ def test_register_login_create_upload_query_and_read_sources(
     )
     monkeypatch.setattr(
         document_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     monkeypatch.setattr(
         document_endpoints,
@@ -339,7 +358,7 @@ def test_register_login_create_upload_query_and_read_sources(
         knowledge_base_id = knowledge_base_response.json()["data"]["id"]
 
         upload_response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base_id}/documents",
+            f"/api/v1/knowledge-bases/{knowledge_base_id}/documents?workspace_id={workspace.id}",
             headers=headers,
             files={"file": ("travel_policy.txt", b"meal allowance is GBP 40", "text/plain")},
         )

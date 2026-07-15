@@ -19,6 +19,8 @@ from backend.app.services.documents import (
     UnsupportedFileExtensionError,
     UnsupportedMimeTypeError,
     create_document_from_upload,
+    get_document_for_workspace_knowledge_base,
+    list_documents_for_workspace_knowledge_base,
     reprocess_document,
     sanitize_filename,
 )
@@ -30,6 +32,14 @@ class FakeScalarResult:
 
     def scalar_one_or_none(self) -> Document | None:
         return self.document
+
+
+class FakeDocumentListResult:
+    def __init__(self, rows: list[tuple[Document, int]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[Document, int]]:
+        return self.rows
 
 
 class FakeSession:
@@ -52,6 +62,16 @@ class FakeSession:
 
     async def refresh(self, instance: object) -> None:
         self.refreshed = instance is self.added
+
+
+class FakeQuerySession:
+    def __init__(self, result: object) -> None:
+        self.result = result
+        self.statement: object | None = None
+
+    async def execute(self, statement: object) -> object:
+        self.statement = statement
+        return self.result
 
 
 def make_user() -> User:
@@ -79,6 +99,25 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
+    )
+
+
+def make_document(
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    created_by: uuid.UUID,
+) -> Document:
+    return Document(
+        id=uuid.uuid4(),
+        knowledge_base_id=knowledge_base_id,
+        workspace_id=workspace_id,
+        filename="notes.txt",
+        file_type="txt",
+        file_size=11,
+        file_hash="hash",
+        storage_path="storage/uploads/notes.txt",
+        status=DocumentStatus.UPLOADED.value,
+        created_by=created_by,
     )
 
 
@@ -310,3 +349,45 @@ async def test_reprocess_document_marks_failed_on_parser_error(
     assert document.status == DocumentStatus.FAILED.value
     assert document.error_message == DocumentParsingError.message
     assert session.commit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_document_for_workspace_knowledge_base_filters_by_workspace() -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document = make_document(knowledge_base.id, knowledge_base.workspace_id, user.id)
+    session = FakeQuerySession(FakeScalarResult(document))
+
+    result = await get_document_for_workspace_knowledge_base(
+        session,  # type: ignore[arg-type]
+        knowledge_base.workspace_id,
+        knowledge_base.id,
+        document.id,
+    )
+
+    assert result is document
+    assert session.statement is not None
+    statement = str(session.statement).lower()
+    assert "documents.workspace_id" in statement
+    assert "documents.knowledge_base_id" in statement
+
+
+@pytest.mark.asyncio
+async def test_list_documents_for_workspace_knowledge_base_filters_by_workspace() -> None:
+    user = make_user()
+    knowledge_base = make_knowledge_base(user.id)
+    document = make_document(knowledge_base.id, knowledge_base.workspace_id, user.id)
+    session = FakeQuerySession(FakeDocumentListResult([(document, 2)]))
+
+    result = await list_documents_for_workspace_knowledge_base(
+        session,  # type: ignore[arg-type]
+        knowledge_base.workspace_id,
+        knowledge_base.id,
+    )
+
+    assert result == [(document, 2)]
+    assert session.statement is not None
+    statement = str(session.statement).lower()
+    assert "documents.workspace_id" in statement
+    assert "document_chunks.workspace_id" in statement
+    assert "documents.knowledge_base_id" in statement

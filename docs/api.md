@@ -358,20 +358,24 @@ Requires workspace owner access. Returns `204 No Content`.
 
 ## Document Endpoints
 
-All document endpoints are scoped to a knowledge base and require authentication.
+All document endpoints require authentication, workspace context, and a knowledge base that belongs
+to the supplied workspace. The v2 workspace-scoped routes are preferred. The top-level routes remain
+available only when `workspace_id` is supplied as a query parameter.
 
 ### List documents
 
 ```text
-GET /api/v1/knowledge-bases/{knowledge_base_id}/documents
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents
+GET /api/v1/knowledge-bases/{knowledge_base_id}/documents?workspace_id={workspace_id}
 ```
 
-Requires read permission. Returns documents with chunk counts.
+Requires workspace membership. Returns documents with chunk counts.
 
 ### Upload document
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/documents
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents
+POST /api/v1/knowledge-bases/{knowledge_base_id}/documents?workspace_id={workspace_id}
 Content-Type: multipart/form-data
 ```
 
@@ -381,7 +385,7 @@ Form field:
 file=<uploaded file>
 ```
 
-Requires write permission.
+Requires workspace owner/admin access.
 
 Supported file types:
 
@@ -398,21 +402,35 @@ Behavior:
 - Rejects duplicate SHA-256 hashes within the same knowledge base.
 - Parses, chunks, and embeds the document during upload.
 
+### Read document
+
+```text
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents/{document_id}
+GET /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}?workspace_id={workspace_id}
+```
+
+Requires workspace membership. The document must belong to the supplied workspace and knowledge
+base.
+
 ### Reprocess document
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reprocess
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reprocess
+POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reprocess?workspace_id={workspace_id}
 ```
 
-Requires write permission. Re-parses the stored file, replaces chunks, and re-embeds them.
+Requires workspace owner/admin access. Re-parses the stored file, replaces chunks, and re-embeds
+them.
 
 ### Delete document
 
 ```text
-DELETE /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}
+DELETE /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/documents/{document_id}
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}?workspace_id={workspace_id}
 ```
 
-Requires write permission. Deletes the database row and stored file. Returns `204 No Content`.
+Requires workspace owner/admin access. Deletes the database row and stored file. Returns
+`204 No Content`.
 
 ## RAG Endpoints
 
@@ -570,10 +588,11 @@ Uses Server-Sent Events. The stream can emit token, metadata, source, completion
 
 | Operation | Required permission |
 | --- | --- |
-| Read knowledge base | owner, editor, viewer |
-| Update knowledge base | owner, editor |
-| Delete knowledge base | owner |
-| List/upload/reprocess/delete documents | read for list, write for changes |
+| Read/list knowledge bases | workspace owner, admin, editor, reviewer, viewer |
+| Create/update knowledge base | workspace owner or admin |
+| Delete knowledge base | workspace owner |
+| List/read documents | workspace owner, admin, editor, reviewer, viewer |
+| Upload/reprocess/delete documents | workspace owner or admin |
 | RAG query and debug | owner, editor, viewer |
 | Conversations and chat | owner, editor, viewer |
 
