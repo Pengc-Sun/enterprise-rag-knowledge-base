@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from backend.app.models.conversation import Conversation
     from backend.app.models.document import Document
     from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
+    from backend.app.models.workspace import Workspace, WorkspaceMember
 
 
 class UserRole(StrEnum):
@@ -52,6 +53,14 @@ class User(Base):
     )
     documents: Mapped[list[Document]] = relationship(back_populates="creator")
     conversations: Mapped[list[Conversation]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    owned_workspaces: Mapped[list[Workspace]] = relationship(
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
+    workspace_memberships: Mapped[list[WorkspaceMember]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
