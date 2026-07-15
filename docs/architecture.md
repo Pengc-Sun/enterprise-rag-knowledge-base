@@ -8,6 +8,7 @@ The system is designed to provide a private, authenticated RAG workflow for ente
 
 - Users register, log in, and receive JWT access tokens.
 - Users create knowledge bases and manage documents inside them.
+- The v2.0 upgrade introduces workspaces as the top-level project boundary above knowledge bases.
 - Uploaded files are parsed, chunked, embedded, and stored in PostgreSQL with pgvector.
 - Queries use hybrid retrieval, reranking, and an LLM provider abstraction to generate grounded answers.
 - Conversations persist messages and source citations for multi-turn chat.
@@ -77,7 +78,10 @@ The frontend is a React + TypeScript + Vite app. It stores auth state through th
 Main entities:
 
 - `User`: registered account with unique email, username, hashed password, role, and active flag.
-- `KnowledgeBase`: user-owned workspace for documents, conversations, and permissions.
+- `Workspace`: v2.0 project boundary with owner, slug, status, optional template, and member list.
+- `WorkspaceMember`: v2.0 user-to-workspace role row with `owner`, `admin`, `editor`, `reviewer`, or `viewer`.
+- `WorkspaceTemplate`: v2.0 reusable workspace definition with category, directory schema, analysis task schema, and report schema.
+- `KnowledgeBase`: v1.0 user-owned collection for documents, conversations, and permissions. It remains the active document boundary until the Week 2 v2.0 migration attaches existing knowledge-base data to workspaces.
 - `KnowledgeBaseMember`: user-to-knowledge-base permission row with `owner`, `editor`, or `viewer` permissions.
 - `Document`: uploaded file metadata, hash, storage path, status, and creator.
 - `DocumentChunk`: parsed content chunk with page, section, token count, JSON metadata, full-text vector, and pgvector embedding.
@@ -86,7 +90,8 @@ Main entities:
 
 Important relationships:
 
-- Deleting a user cascades owned knowledge bases, memberships, and conversations.
+- Deleting a user cascades owned knowledge bases, memberships, conversations, owned workspaces, and workspace memberships.
+- Deleting a workspace cascades workspace memberships. Later v2.0 migration work will attach knowledge bases, documents, chunks, and conversations to workspaces.
 - Deleting a knowledge base cascades members, documents, chunks, conversations, and messages.
 - Deleting a document cascades its chunks and removes the stored upload file.
 
@@ -107,13 +112,17 @@ A typical API request follows this path:
 
 Authentication uses bearer JWTs. Tokens contain the user ID in the `sub` claim and an expiration time in `exp`.
 
-Authorization is enforced in service or endpoint logic through knowledge base permission checks:
+Authorization is enforced in service or endpoint logic through knowledge base and workspace permission checks:
 
-- Read operations allow `owner`, `editor`, or `viewer`.
-- Write operations allow `owner` or `editor`.
-- Delete knowledge base requires `owner`.
+- Knowledge-base read operations allow `owner`, `editor`, or `viewer`.
+- Knowledge-base write operations allow `owner` or `editor`.
+- Deleting a knowledge base requires `owner`.
+- Workspace read operations allow `owner`, `admin`, `editor`, `reviewer`, or `viewer`.
+- Workspace write and member-management operations allow `owner` or `admin`.
+- Deleting a workspace requires `owner`.
+- Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 
-Unauthorized or missing resources intentionally return `404` for knowledge-base-scoped access in many paths, which avoids leaking private resource existence.
+Unauthorized or missing resources intentionally return `404` for scoped access in many paths, which avoids leaking private resource existence.
 
 ## Document Ingestion Flow
 

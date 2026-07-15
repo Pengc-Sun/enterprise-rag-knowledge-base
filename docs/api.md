@@ -157,6 +157,135 @@ GET /api/v1/users/me
 
 Requires authentication. Returns the active user represented by the bearer token.
 
+
+## Workspace Endpoints
+
+Workspace endpoints are part of the v2.0 upgrade branch and require authentication. A workspace is the new top-level project boundary for later v2.0 document, analysis, review, and report workflows.
+
+### List workspace templates
+
+```text
+GET /api/v1/workspace-templates
+```
+
+Returns active built-in template definitions. Week 1 seeds these categories: `general`, `policy_review`, `it_support`, and `research_review`. Each template includes directory, analysis task, and report schemas for later v2.0 instantiation work.
+
+### Read workspace template
+
+```text
+GET /api/v1/workspace-templates/{template_id}
+```
+
+Returns one active template or `404 not_found` if the template does not exist or is inactive.
+
+### Create workspace
+
+```text
+POST /api/v1/workspaces
+```
+
+Request body:
+
+```json
+{
+  "name": "Policy Review",
+  "slug": "policy-review",
+  "description": "Review internal policy documents",
+  "template_id": null
+}
+```
+
+Behavior:
+
+- Creates a workspace owned by the current user.
+- Automatically creates an `owner` membership for the creator.
+- Accepts optional `template_id`; Week 1 stores the selected template, while full template instantiation is scheduled for a later v2.0 week.
+- Requires a lowercase hyphenated slug.
+
+### List workspaces
+
+```text
+GET /api/v1/workspaces
+```
+
+Lists workspaces the current user owns or belongs to.
+
+### Read workspace
+
+```text
+GET /api/v1/workspaces/{workspace_id}
+```
+
+Requires workspace membership. Missing or inaccessible workspaces return `404 not_found`.
+
+### Update workspace
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}
+```
+
+Requires `owner` or `admin` role. Request body fields are optional:
+
+```json
+{
+  "name": "Updated Policy Review",
+  "slug": "updated-policy-review",
+  "description": "Updated description",
+  "status": "active"
+}
+```
+
+`status` can be `active` or `archived`.
+
+### Delete workspace
+
+```text
+DELETE /api/v1/workspaces/{workspace_id}
+```
+
+Requires `owner` role. Returns `204 No Content`.
+
+### List workspace members
+
+```text
+GET /api/v1/workspaces/{workspace_id}/members
+```
+
+Requires workspace membership.
+
+### Add workspace member
+
+```text
+POST /api/v1/workspaces/{workspace_id}/members
+```
+
+Requires `owner` or `admin` role. Request body:
+
+```json
+{
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "role": "reviewer"
+}
+```
+
+Assignable roles are `admin`, `editor`, `reviewer`, and `viewer`. The `owner` role cannot be assigned through member endpoints.
+
+### Update workspace member
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}/members/{user_id}
+```
+
+Requires `owner` or `admin` role. The workspace owner membership cannot be modified through this endpoint.
+
+### Remove workspace member
+
+```text
+DELETE /api/v1/workspaces/{workspace_id}/members/{user_id}
+```
+
+Requires `owner` or `admin` role. The workspace owner membership cannot be removed through this endpoint. Returns `204 No Content` on success.
+
 ## Knowledge Base Endpoints
 
 All knowledge base endpoints require authentication.

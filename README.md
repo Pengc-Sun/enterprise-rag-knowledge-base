@@ -2,7 +2,7 @@
 
 Enterprise RAG Knowledge Base is a full-stack Retrieval-Augmented Generation system for private enterprise documents. It supports authenticated users, multiple knowledge bases, document ingestion, hybrid retrieval, reranking, multi-turn chat, streaming answers, source citations, evaluation tooling, Docker deployment, and GitHub Actions CI.
 
-The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete and the repository is ready for GitHub release tagging, repository topics, and CV/interview use.
+The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete and the repository is ready for GitHub release tagging, repository topics, and CV/interview use. A v2.0 workspace upgrade is now being developed on `feature/v2-workspaces`; the stable v1.0 line remains on `main`.
 
 ## Overview
 
@@ -401,13 +401,18 @@ Release follow-up:
 - Publish the GitHub Release using `docs/release-v1.0.0.md`.
 - Add repository topics and attach the demo video as a release asset if available.
 
+v2.0 upgrade progress:
+
+- Week 1: workspace foundation, workspace/member/template models, migrations, CRUD APIs, role-based member management, built-in template APIs, and backend access-control test coverage.
+
 ## Development Logs
 
 - `docs/development-roadmap.md`
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
+- `docs/development-log/v2-week-1.md`
 
-Week 3 through Week 8 completion summaries are included below in the acceptance status sections.
+Week 3 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
 ## Week 1 Acceptance Status
 
@@ -501,6 +506,19 @@ Week 3 through Week 8 completion summaries are included below in the acceptance 
 - Changelog, v1.0.0 release notes, repository topic suggestions, tag commands, and CV/interview project copy are prepared.
 - v1.0.0 package/app versions are set across backend, frontend, and OpenAPI metadata.
 - Final validation passed: pytest, Ruff, mypy, frontend typecheck/build, production Docker config/build, retrieval evaluation reproduction, and local secrets scan.
+
+## v2.0 Week 1 Acceptance Status
+
+- Workspace, workspace member, and workspace template SQLAlchemy models and Pydantic schemas are implemented.
+- Alembic migrations create workspace tables, indexes, foreign keys, uniqueness constraints, and seed built-in templates.
+- Authenticated users can create, list, read, update, and delete workspaces through `/api/v1/workspaces`.
+- Workspace creation automatically creates an owner membership for the creator.
+- Users only see workspaces they own or belong to.
+- Workspace member APIs support listing, adding, updating, and removing assignable member roles.
+- Owner membership is protected from member-management endpoints.
+- Built-in workspace template list/detail APIs return active template definitions.
+- Backend tests cover workspace CRUD, ownership, member roles, template listing, and key access-control boundaries.
+- Backend verification passed with pytest, Ruff, and mypy on `feature/v2-workspaces`.
 
 ## CI
 
