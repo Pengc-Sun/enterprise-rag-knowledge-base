@@ -404,6 +404,7 @@ Release follow-up:
 v2.0 upgrade progress:
 
 - Week 1: workspace foundation, workspace/member/template models, migrations, CRUD APIs, role-based member management, built-in template APIs, and backend access-control test coverage.
+- Week 2: v1.0 knowledge-base data migration into workspaces, required workspace IDs on existing data tables, seeded migration validation, Alembic downgrade/upgrade validation, and Docker migrate startup validation.
 
 ## Development Logs
 
@@ -411,6 +412,7 @@ v2.0 upgrade progress:
 - `docs/development-log/week-1.md`
 - `docs/development-log/week-2.md`
 - `docs/development-log/v2-week-1.md`
+- `docs/development-log/v2-week-2.md`
 
 Week 3 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 

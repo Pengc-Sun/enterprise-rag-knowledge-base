@@ -3,7 +3,7 @@ VENV ?= .venv
 BIN := $(VENV)/bin
 PROD_ENV ?= .env.production.example
 
-.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs docker-prod-up docker-prod-down docker-prod-logs docker-prod-config migrate-up migrate-down migrate-current validate-workspace-migration eval-retrieval
+.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs docker-prod-up docker-prod-down docker-prod-logs docker-prod-config migrate-up migrate-down migrate-current validate-workspace-migration validate-migration-startup validate-docker-migration-startup eval-retrieval
 
 help:
 	@echo "Available commands:"
@@ -25,6 +25,8 @@ help:
 	@echo "  make migrate-down     Roll back one Alembic migration"
 	@echo "  make migrate-current  Show current Alembic revision"
 	@echo "  make validate-workspace-migration Validate seeded v1-to-v2 workspace migration"
+	@echo "  make validate-migration-startup Validate Alembic round trip and Docker startup ordering"
+	@echo "  make validate-docker-migration-startup Validate real Docker migrate startup"
 	@echo "  make eval-retrieval   Evaluate retrieval prediction metrics"
 
 $(BIN)/python:
@@ -86,7 +88,12 @@ migrate-current:
 validate-workspace-migration:
 	$(BIN)/python scripts/validate_workspace_migration.py --yes
 
+validate-migration-startup:
+	$(BIN)/python scripts/validate_migration_startup.py --yes
+
+validate-docker-migration-startup:
+	$(BIN)/python scripts/validate_migration_startup.py --yes --run-docker-startup
+
 # Usage: make eval-retrieval PREDICTIONS=evaluations/retrieval_predictions.jsonl
 eval-retrieval:
 	$(BIN)/python scripts/run_retrieval_evaluation.py --predictions $(PREDICTIONS)
-

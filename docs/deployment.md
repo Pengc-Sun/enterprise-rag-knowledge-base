@@ -161,6 +161,18 @@ Validate Compose configuration:
 make docker-prod-config PROD_ENV=.env.production
 ```
 
+Validate migration startup ordering and Alembic downgrade/upgrade:
+
+```bash
+make validate-migration-startup
+```
+
+Validate the real Docker migrate service against an isolated fresh database:
+
+```bash
+make validate-docker-migration-startup
+```
+
 Build and start:
 
 ```bash
