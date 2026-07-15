@@ -48,6 +48,7 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
+        workspace_id=uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
@@ -59,6 +60,7 @@ def make_chunk(knowledge_base_id: uuid.UUID) -> DocumentChunk:
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
+        workspace_id=uuid.uuid4(),
         filename="architecture.md",
         file_type="md",
         file_size=128,

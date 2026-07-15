@@ -11,12 +11,16 @@ from backend.app.models.workspace import (
 )
 from backend.app.schemas.workspace import WorkspaceCreate, WorkspaceUpdate
 from backend.app.services.workspaces import (
+    DEFAULT_WORKSPACE_NAME,
+    DEFAULT_WORKSPACE_SLUG_PREFIX,
     OWNER_ROLES,
     READ_ROLES,
     WRITE_ROLES,
     WorkspaceMemberRoleError,
     WorkspaceOwnerMemberError,
     add_workspace_member,
+    default_workspace_slug_for_user,
+    get_or_create_default_workspace_for_user,
     get_workspace_for_user,
     remove_workspace_member,
     update_workspace,
@@ -66,6 +70,79 @@ def make_workspace() -> Workspace:
         created_at=now,
         updated_at=now,
     )
+
+
+class FakeDefaultWorkspaceScalarResult:
+    def __init__(self, workspace: Workspace | None) -> None:
+        self.workspace = workspace
+
+    def scalar_one_or_none(self) -> Workspace | None:
+        return self.workspace
+
+
+class FakeDefaultWorkspaceSession:
+    def __init__(self, workspace: Workspace | None = None) -> None:
+        self.workspace = workspace
+        self.added: list[object] = []
+        self.committed = False
+        self.refreshed: object | None = None
+        self.statement: object | None = None
+
+    async def execute(self, statement: object) -> FakeDefaultWorkspaceScalarResult:
+        self.statement = statement
+        return FakeDefaultWorkspaceScalarResult(self.workspace)
+
+    def add(self, instance: object) -> None:
+        self.added.append(instance)
+
+    async def flush(self) -> None:
+        for instance in self.added:
+            if isinstance(instance, Workspace) and instance.id is None:
+                instance.id = uuid.uuid4()
+
+    async def commit(self) -> None:
+        self.committed = True
+
+    async def refresh(self, instance: object) -> None:
+        self.refreshed = instance
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_default_workspace_returns_existing_workspace() -> None:
+    workspace = make_workspace()
+    session = FakeDefaultWorkspaceSession(workspace)
+
+    result = await get_or_create_default_workspace_for_user(
+        session,  # type: ignore[arg-type]
+        workspace.owner_id,
+    )
+
+    assert result is workspace
+    assert session.added == []
+    assert session.committed is False
+    assert session.statement is not None
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_default_workspace_creates_owner_membership() -> None:
+    user_id = uuid.uuid4()
+    session = FakeDefaultWorkspaceSession()
+
+    workspace = await get_or_create_default_workspace_for_user(
+        session,  # type: ignore[arg-type]
+        user_id,
+    )
+
+    owner_member = next(item for item in session.added if isinstance(item, WorkspaceMember))
+    assert workspace.name == DEFAULT_WORKSPACE_NAME
+    assert workspace.slug == f"{DEFAULT_WORKSPACE_SLUG_PREFIX}{str(user_id).replace('-', '')}"
+    assert workspace.slug == default_workspace_slug_for_user(user_id)
+    assert workspace.owner_id == user_id
+    assert owner_member.workspace_id == workspace.id
+    assert owner_member.user_id == user_id
+    assert owner_member.role == WorkspaceMemberRole.OWNER.value
+    assert session.committed is True
+    assert session.refreshed is workspace
 
 
 def test_workspace_create_schema_requires_valid_slug() -> None:

@@ -28,6 +28,12 @@ WRITE_ROLES = frozenset(
 )
 OWNER_ROLES = frozenset({WorkspaceMemberRole.OWNER.value})
 MEMBER_MANAGEMENT_ROLES = WRITE_ROLES
+DEFAULT_WORKSPACE_NAME = "Default Workspace"
+DEFAULT_WORKSPACE_DESCRIPTION = (
+    "Auto-created for v1-compatible knowledge-base flows."
+)
+DEFAULT_WORKSPACE_SLUG_PREFIX = "v1-default-"
+
 ASSIGNABLE_MEMBER_ROLES = frozenset(
     {
         WorkspaceMemberRole.ADMIN.value,
@@ -44,6 +50,51 @@ class WorkspaceMemberRoleError(ValueError):
 
 class WorkspaceOwnerMemberError(ValueError):
     message = "Workspace owner membership cannot be modified through member endpoints"
+
+
+def default_workspace_slug_for_user(user_id: uuid.UUID) -> str:
+    return f"{DEFAULT_WORKSPACE_SLUG_PREFIX}{str(user_id).replace('-', '')}"
+
+
+async def get_default_workspace_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> Workspace | None:
+    result = await session.execute(
+        select(Workspace).where(
+            Workspace.owner_id == user_id,
+            Workspace.slug == default_workspace_slug_for_user(user_id),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_or_create_default_workspace_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> Workspace:
+    existing_workspace = await get_default_workspace_for_user(session, user_id)
+    if existing_workspace is not None:
+        return existing_workspace
+
+    workspace = Workspace(
+        name=DEFAULT_WORKSPACE_NAME,
+        slug=default_workspace_slug_for_user(user_id),
+        description=DEFAULT_WORKSPACE_DESCRIPTION,
+        owner_id=user_id,
+    )
+    session.add(workspace)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=user_id,
+            role=WorkspaceMemberRole.OWNER.value,
+        )
+    )
+    await session.commit()
+    await session.refresh(workspace)
+    return workspace
 
 
 async def create_workspace(

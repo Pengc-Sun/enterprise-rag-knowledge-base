@@ -123,6 +123,7 @@ async def create_document_from_upload(
     document = Document(
         id=document_id,
         knowledge_base_id=knowledge_base.id,
+        workspace_id=knowledge_base.workspace_id,
         filename=sanitized_filename,
         file_type=file_type,
         file_size=file_size,

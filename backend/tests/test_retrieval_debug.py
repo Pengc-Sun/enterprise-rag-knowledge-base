@@ -57,6 +57,7 @@ def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
+        workspace_id=uuid.uuid4(),
         filename=f"debug-{index}.md",
         file_type="md",
         file_size=128,

@@ -24,6 +24,7 @@ class KnowledgeBaseUpdate(BaseModel):
 
 class KnowledgeBaseRead(KnowledgeBaseBase):
     id: uuid.UUID
+    workspace_id: uuid.UUID
     owner_id: uuid.UUID
     created_at: datetime
     updated_at: datetime

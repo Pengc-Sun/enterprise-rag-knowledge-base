@@ -40,6 +40,7 @@ def make_conversation() -> Conversation:
         id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         title="Travel policy",
         created_at=now,
         updated_at=now,
@@ -51,11 +52,13 @@ async def test_create_conversation_persists_user_and_knowledge_base() -> None:
     session = FakeSession()
     user_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
 
     conversation = await create_conversation(
         session,  # type: ignore[arg-type]
         user_id,
         knowledge_base_id,
+        workspace_id,
         ConversationCreate(title="Travel policy"),
     )
 
@@ -64,6 +67,7 @@ async def test_create_conversation_persists_user_and_knowledge_base() -> None:
     assert session.refreshed == [conversation]
     assert conversation.user_id == user_id
     assert conversation.knowledge_base_id == knowledge_base_id
+    assert conversation.workspace_id == workspace_id
     assert conversation.title == "Travel policy"
 
 

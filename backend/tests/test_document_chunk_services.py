@@ -28,6 +28,7 @@ def make_document() -> Document:
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         filename="architecture.pdf",
         file_type="pdf",
         file_size=2048,
@@ -71,6 +72,7 @@ async def test_replace_document_chunks_deletes_existing_and_adds_new_chunks() ->
     assert [chunk.chunk_index for chunk in stored_chunks] == [0, 1]
     assert all(chunk.document_id == document.id for chunk in stored_chunks)
     assert all(chunk.knowledge_base_id == document.knowledge_base_id for chunk in stored_chunks)
+    assert all(chunk.workspace_id == document.workspace_id for chunk in stored_chunks)
     assert stored_chunks[0].content == "Architecture overview"
     assert stored_chunks[0].page_number == 1
     assert stored_chunks[0].section_title == "Overview"

@@ -12,6 +12,7 @@ from backend.app.db.session import get_db_session
 from backend.app.main import app
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.models.workspace import Workspace
 from backend.app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseUpdate
 
 
@@ -36,7 +37,21 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
+        workspace_id=uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_workspace(owner_id: uuid.UUID) -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace(
+        id=uuid.uuid4(),
+        name="Default Workspace",
+        slug=f"v1-default-{str(owner_id).replace('-', '')}",
+        owner_id=owner_id,
+        status="active",
         created_at=now,
         updated_at=now,
     )
@@ -61,16 +76,31 @@ def clear_overrides() -> None:
 def test_create_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+
+    async def fake_get_or_create_default_workspace_for_user(
+        session: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> Workspace:
+        assert user_id == user.id
+        return workspace
 
     async def fake_create_knowledge_base(
         session: AsyncSession,
         owner_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_create: KnowledgeBaseCreate,
     ) -> KnowledgeBase:
         assert owner_id == user.id
+        assert workspace_id == workspace.id
         assert knowledge_base_create.name == "Engineering Handbook"
         return knowledge_base
 
+    monkeypatch.setattr(
+        knowledge_base_endpoints,
+        "get_or_create_default_workspace_for_user",
+        fake_get_or_create_default_workspace_for_user,
+    )
     monkeypatch.setattr(
         knowledge_base_endpoints,
         "create_knowledge_base",

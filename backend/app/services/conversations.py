@@ -14,11 +14,13 @@ async def create_conversation(
     session: AsyncSession,
     user_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     conversation_create: ConversationCreate,
 ) -> Conversation:
     conversation = Conversation(
         user_id=user_id,
         knowledge_base_id=knowledge_base_id,
+        workspace_id=workspace_id,
         title=conversation_create.title,
     )
     session.add(conversation)

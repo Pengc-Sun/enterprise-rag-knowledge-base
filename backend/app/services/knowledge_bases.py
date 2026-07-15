@@ -30,6 +30,7 @@ OWNER_PERMISSIONS = frozenset({KnowledgeBasePermission.OWNER.value})
 async def create_knowledge_base(
     session: AsyncSession,
     owner_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     knowledge_base_create: KnowledgeBaseCreate,
 ) -> KnowledgeBase:
     knowledge_base = KnowledgeBase(
@@ -37,6 +38,7 @@ async def create_knowledge_base(
         description=knowledge_base_create.description,
         visibility=knowledge_base_create.visibility.value,
         owner_id=owner_id,
+        workspace_id=workspace_id,
     )
     session.add(knowledge_base)
     await session.flush()

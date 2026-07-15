@@ -18,6 +18,7 @@ from backend.app.main import app
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.models.workspace import Workspace
 from backend.app.schemas.knowledge_base import KnowledgeBaseCreate
 from backend.app.schemas.user import UserCreate
 from backend.app.services.llms import LLMProviderName
@@ -49,6 +50,7 @@ def make_document(knowledge_base_id: uuid.UUID, user_id: uuid.UUID) -> Document:
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
+        workspace_id=uuid.uuid4(),
         filename="travel_policy.txt",
         file_type="txt",
         file_size=95,
@@ -68,6 +70,7 @@ def make_chunk(document: Document) -> DocumentChunk:
         id=uuid.uuid4(),
         document_id=document.id,
         knowledge_base_id=document.knowledge_base_id,
+        workspace_id=document.workspace_id,
         content="The maximum meal allowance is GBP 40 per day.",
         chunk_index=0,
         page_number=1,
@@ -135,19 +138,42 @@ def test_register_login_create_upload_query_and_read_sources(
         user = cast(User, state["user"])
         return user if user.id == user_id else None
 
+    async def fake_get_or_create_default_workspace_for_user(
+        session: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> Workspace:
+        user = cast(User, state["user"])
+        assert user_id == user.id
+        now = datetime.now(UTC)
+        workspace = Workspace(
+            id=uuid.uuid4(),
+            name="Default Workspace",
+            slug=f"v1-default-{str(user_id).replace('-', '')}",
+            owner_id=user_id,
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+        state["workspace"] = workspace
+        return workspace
+
     async def fake_create_knowledge_base(
         session: AsyncSession,
         owner_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_create: KnowledgeBaseCreate,
     ) -> KnowledgeBase:
         user = cast(User, state["user"])
+        workspace = cast(Workspace, state["workspace"])
         assert owner_id == user.id
+        assert workspace_id == workspace.id
         now = datetime.now(UTC)
         knowledge_base = KnowledgeBase(
             id=uuid.uuid4(),
             name=knowledge_base_create.name,
             description=knowledge_base_create.description,
             owner_id=owner_id,
+            workspace_id=workspace_id,
             visibility=KnowledgeBaseVisibility.PRIVATE.value,
             created_at=now,
             updated_at=now,
@@ -238,6 +264,11 @@ def test_register_login_create_upload_query_and_read_sources(
     monkeypatch.setattr(auth_endpoints, "create_user", fake_create_user)
     monkeypatch.setattr(auth_endpoints, "authenticate_user", fake_authenticate_user)
     monkeypatch.setattr(auth_dependencies, "get_user_by_id", fake_get_user_by_id)
+    monkeypatch.setattr(
+        knowledge_base_endpoints,
+        "get_or_create_default_workspace_for_user",
+        fake_get_or_create_default_workspace_for_user,
+    )
     monkeypatch.setattr(
         knowledge_base_endpoints,
         "create_knowledge_base",

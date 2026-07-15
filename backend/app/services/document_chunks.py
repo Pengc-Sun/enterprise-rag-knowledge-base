@@ -16,6 +16,7 @@ async def replace_document_chunks(
         DocumentChunk(
             document_id=document.id,
             knowledge_base_id=document.knowledge_base_id,
+            workspace_id=document.workspace_id,
             content=chunk.content,
             chunk_index=chunk.chunk_index,
             page_number=chunk.page_number,

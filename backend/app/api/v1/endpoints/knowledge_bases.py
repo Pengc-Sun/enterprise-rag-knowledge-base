@@ -24,6 +24,7 @@ from backend.app.services.knowledge_bases import (
     list_knowledge_bases_for_user,
     update_knowledge_base,
 )
+from backend.app.services.workspaces import get_or_create_default_workspace_for_user
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge bases"])
 
@@ -34,9 +35,11 @@ async def create_knowledge_base_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[KnowledgeBaseRead]:
+    workspace = await get_or_create_default_workspace_for_user(session, current_user.id)
     knowledge_base = await create_knowledge_base(
         session,
         current_user.id,
+        workspace.id,
         knowledge_base_create,
     )
     return success_response(

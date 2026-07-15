@@ -41,6 +41,7 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
+        workspace_id=uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
@@ -53,6 +54,7 @@ def make_conversation(user_id: uuid.UUID, knowledge_base_id: uuid.UUID) -> Conve
         id=uuid.uuid4(),
         user_id=user_id,
         knowledge_base_id=knowledge_base_id,
+        workspace_id=uuid.uuid4(),
         title="Travel policy",
         created_at=now,
         updated_at=now,
@@ -109,10 +111,12 @@ def test_create_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
         session: AsyncSession,
         user_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         conversation_create: ConversationCreate,
     ) -> Conversation:
         assert user_id == user.id
         assert knowledge_base_id == knowledge_base.id
+        assert workspace_id == knowledge_base.workspace_id
         assert conversation_create.title == "Travel policy"
         return conversation
 

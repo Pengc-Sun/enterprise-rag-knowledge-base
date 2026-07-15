@@ -159,6 +159,7 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         name="Travel Handbook",
         description="Integration test handbook",
         owner_id=owner_id,
+        workspace_id=uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,

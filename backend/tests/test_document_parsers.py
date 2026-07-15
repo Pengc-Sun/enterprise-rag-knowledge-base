@@ -20,6 +20,7 @@ def make_document(path: Path, file_type: str) -> Document:
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         filename=path.name,
         file_type=file_type,
         file_size=path.stat().st_size if path.exists() else 0,

@@ -66,6 +66,7 @@ async def create_conversation_endpoint(
         session,
         current_user.id,
         knowledge_base.id,
+        knowledge_base.workspace_id,
         conversation_create,
     )
     return success_response(

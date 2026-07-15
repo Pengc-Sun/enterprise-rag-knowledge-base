@@ -18,6 +18,7 @@ class ConversationUpdate(BaseModel):
 class ConversationRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
+    workspace_id: uuid.UUID
     knowledge_base_id: uuid.UUID
     title: str
     created_at: datetime

@@ -39,6 +39,7 @@ def test_knowledge_base_member_relationship() -> None:
         id=uuid.uuid4(),
         name="Engineering Handbook",
         owner_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
     )
     member = KnowledgeBaseMember(
         knowledge_base=knowledge_base,
@@ -62,12 +63,3 @@ def test_knowledge_base_accepts_nullable_workspace_id() -> None:
     )
 
     assert knowledge_base.workspace_id == workspace_id
-
-
-def test_knowledge_base_workspace_id_defaults_to_none() -> None:
-    knowledge_base = KnowledgeBase(
-        name="Engineering Handbook",
-        owner_id=uuid.uuid4(),
-    )
-
-    assert knowledge_base.workspace_id is None

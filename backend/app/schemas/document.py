@@ -8,6 +8,7 @@ from backend.app.models.document import DocumentStatus
 
 class DocumentRead(BaseModel):
     id: uuid.UUID
+    workspace_id: uuid.UUID
     knowledge_base_id: uuid.UUID
     filename: str
     file_type: str

@@ -75,6 +75,7 @@ def test_document_chunk_relationship() -> None:
     chunk = DocumentChunk(
         document=document,
         knowledge_base_id=knowledge_base.id,
+        workspace_id=knowledge_base.workspace_id,
         content="Architecture overview",
         chunk_index=0,
         page_number=1,
@@ -93,6 +94,7 @@ def test_document_chunk_accepts_embedding_vector() -> None:
     chunk = DocumentChunk(
         document_id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         content="Architecture overview",
         chunk_index=0,
         page_number=1,
@@ -109,6 +111,7 @@ def test_document_chunk_embedding_status_defaults() -> None:
     chunk = DocumentChunk(
         document_id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         content="Architecture overview",
         chunk_index=0,
         page_number=1,
@@ -149,28 +152,3 @@ def test_document_and_chunk_accept_nullable_workspace_id() -> None:
 
     assert document.workspace_id == workspace_id
     assert chunk.workspace_id == workspace_id
-
-
-def test_document_and_chunk_workspace_id_defaults_to_none() -> None:
-    document = Document(
-        knowledge_base_id=uuid.uuid4(),
-        filename="architecture.pdf",
-        file_type="pdf",
-        file_size=2048,
-        file_hash="sha256:architecture",
-        storage_path="knowledge-bases/engineering/architecture.pdf",
-        status=DocumentStatus.UPLOADED.value,
-        created_by=uuid.uuid4(),
-    )
-    chunk = DocumentChunk(
-        document_id=uuid.uuid4(),
-        knowledge_base_id=uuid.uuid4(),
-        content="Architecture overview",
-        chunk_index=0,
-        page_number=1,
-        token_count=2,
-        chunk_metadata={},
-    )
-
-    assert document.workspace_id is None
-    assert chunk.workspace_id is None

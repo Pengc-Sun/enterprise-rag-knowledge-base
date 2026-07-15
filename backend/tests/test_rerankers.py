@@ -23,6 +23,7 @@ def make_chunk(index: int, content: str, section_title: str | None = None) -> Do
         id=uuid.uuid4(),
         document_id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         content=content,
         chunk_index=index,
         page_number=1,

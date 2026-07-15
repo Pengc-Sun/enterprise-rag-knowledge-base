@@ -80,6 +80,7 @@ def make_document() -> Document:
     return Document(
         id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
         filename="notes.txt",
         file_type="txt",
         file_size=10,

@@ -75,6 +75,7 @@ def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
+        workspace_id=uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
@@ -117,6 +118,7 @@ async def test_create_document_from_upload_saves_file_and_document(tmp_path: Pat
     assert document.file_size == len(b"pdf-content")
     assert document.status == "uploaded"
     assert document.created_by == user.id
+    assert document.workspace_id == knowledge_base.workspace_id
     assert Path(document.storage_path).read_bytes() == b"pdf-content"
 
 
@@ -127,6 +129,7 @@ async def test_create_document_from_upload_rejects_duplicate_file_hash(tmp_path:
     duplicate_document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base.id,
+        workspace_id=knowledge_base.workspace_id,
         filename="existing.txt",
         file_type="txt",
         file_size=len(b"same content"),
@@ -215,6 +218,7 @@ async def test_reprocess_document_marks_completed_and_replaces_chunks(
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base.id,
+        workspace_id=knowledge_base.workspace_id,
         filename="notes.txt",
         file_type="txt",
         file_size=11,
@@ -284,6 +288,7 @@ async def test_reprocess_document_marks_failed_on_parser_error(
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base.id,
+        workspace_id=knowledge_base.workspace_id,
         filename="bad.txt",
         file_type="txt",
         file_size=3,
