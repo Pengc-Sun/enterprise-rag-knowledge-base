@@ -3,7 +3,7 @@ VENV ?= .venv
 BIN := $(VENV)/bin
 PROD_ENV ?= .env.production.example
 
-.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs docker-prod-up docker-prod-down docker-prod-logs docker-prod-config migrate-up migrate-down migrate-current eval-retrieval
+.PHONY: help install test lint typecheck format check dev docker-up docker-down docker-logs docker-prod-up docker-prod-down docker-prod-logs docker-prod-config migrate-up migrate-down migrate-current validate-workspace-migration eval-retrieval
 
 help:
 	@echo "Available commands:"
@@ -24,6 +24,7 @@ help:
 	@echo "  make migrate-up       Apply Alembic migrations"
 	@echo "  make migrate-down     Roll back one Alembic migration"
 	@echo "  make migrate-current  Show current Alembic revision"
+	@echo "  make validate-workspace-migration Validate seeded v1-to-v2 workspace migration"
 	@echo "  make eval-retrieval   Evaluate retrieval prediction metrics"
 
 $(BIN)/python:
@@ -81,6 +82,9 @@ migrate-down:
 
 migrate-current:
 	$(BIN)/alembic current
+
+validate-workspace-migration:
+	$(BIN)/python scripts/validate_workspace_migration.py --yes
 
 # Usage: make eval-retrieval PREDICTIONS=evaluations/retrieval_predictions.jsonl
 eval-retrieval:
