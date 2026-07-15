@@ -45,6 +45,7 @@ class RetrievalDebugResult:
 
 async def debug_knowledge_base_retrieval(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     question: str,
     embedding_provider: EmbeddingProvider,
@@ -58,6 +59,7 @@ async def debug_knowledge_base_retrieval(
     retrieval_query = query_rewrite.rewritten_query
     hybrid_candidates = await retrieve_hybrid_chunks(
         session=session,
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=retrieval_query,
         provider=embedding_provider,

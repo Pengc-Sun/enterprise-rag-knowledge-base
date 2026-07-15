@@ -296,6 +296,7 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
 
     async def fake_answer_knowledge_base_question(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         question: str,
         embedding_provider: object,
@@ -310,6 +311,7 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
+        assert workspace_id == conversation.workspace_id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert [(item.role, item.content) for item in history] == [
@@ -467,6 +469,7 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
 
     async def fake_answer_knowledge_base_question(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         question: str,
         embedding_provider: object,
@@ -481,6 +484,8 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
+        assert workspace_id == conversation.workspace_id
+        assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert [(item.role, item.content) for item in history] == [
             ("user", "What is the travel policy?")

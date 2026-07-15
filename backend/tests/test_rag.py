@@ -87,12 +87,17 @@ class FakeReranker(Reranker):
         ]
 
 
-def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
+def make_chunk(
+    index: int,
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID | None = None,
+) -> DocumentChunk:
+    effective_workspace_id = workspace_id or uuid.uuid4()
     now = datetime.now(UTC)
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=effective_workspace_id,
         filename=f"handbook-{index}.md",
         file_type="md",
         file_size=128,
@@ -107,6 +112,7 @@ def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
     chunk = DocumentChunk(
         id=uuid.uuid4(),
         document_id=document.id,
+        workspace_id=effective_workspace_id,
         knowledge_base_id=knowledge_base_id,
         content=f"context body {index}",
         chunk_index=index,
@@ -169,19 +175,25 @@ def test_build_rag_messages_includes_question_and_empty_context_notice() -> None
 async def test_answer_knowledge_base_question_retrieves_context_and_generates_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
-    chunks = [make_chunk(0, knowledge_base_id), make_chunk(1, knowledge_base_id)]
+    chunks = [
+        make_chunk(0, knowledge_base_id, expected_workspace_id),
+        make_chunk(1, knowledge_base_id, expected_workspace_id),
+    ]
     llm_provider = FakeLLMProvider()
     reranker = FakeReranker()
 
     async def fake_retrieve_hybrid_chunks(
         session: object,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         query: str,
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
         metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[HybridRetrievedChunk]:
+        assert workspace_id == expected_workspace_id
         assert query == "How does ingestion work about London?"
         assert config == RetrievalConfig(retrieval_top_k=10, final_context_k=2)
         assert metadata_filter == RetrievalMetadataFilter(
@@ -199,6 +211,7 @@ async def test_answer_knowledge_base_question_retrieves_context_and_generates_an
 
     answer = await answer_knowledge_base_question(
         session=object(),  # type: ignore[arg-type]
+        workspace_id=expected_workspace_id,
         knowledge_base_id=knowledge_base_id,
         question="What about London?",
         embedding_provider=FakeEmbeddingProvider(),
@@ -237,18 +250,21 @@ async def test_answer_knowledge_base_question_logs_structured_rag_metrics(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     user_id = uuid.uuid4()
-    chunk = make_chunk(0, knowledge_base_id)
+    chunk = make_chunk(0, knowledge_base_id, expected_workspace_id)
 
     async def fake_retrieve_hybrid_chunks(
         session: object,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         query: str,
         provider: EmbeddingProvider,
         config: RetrievalConfig | None = None,
         metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[HybridRetrievedChunk]:
+        assert workspace_id == expected_workspace_id
         return [HybridRetrievedChunk(chunk=chunk, rrf_score=0.1, vector_score=0.8)]
 
     monkeypatch.setattr(
@@ -259,6 +275,7 @@ async def test_answer_knowledge_base_question_logs_structured_rag_metrics(
     with caplog.at_level("INFO", logger="backend.app.services.rag"):
         await answer_knowledge_base_question(
             session=object(),  # type: ignore[arg-type]
+            workspace_id=expected_workspace_id,
             knowledge_base_id=knowledge_base_id,
             question="What is the policy?",
             embedding_provider=FakeEmbeddingProvider(),

@@ -210,6 +210,7 @@ async def test_document_ingestion_pipeline_uploads_chunks_embeds_retrieves_and_g
     )
     candidates = await retrieve_hybrid_chunks(
         session=session,  # type: ignore[arg-type]
+        workspace_id=knowledge_base.workspace_id,
         knowledge_base_id=knowledge_base.id,
         query="What is the meal allowance?",
         provider=provider,
@@ -223,6 +224,7 @@ async def test_document_ingestion_pipeline_uploads_chunks_embeds_retrieves_and_g
     )
     answer = await answer_knowledge_base_question(
         session=session,  # type: ignore[arg-type]
+        workspace_id=knowledge_base.workspace_id,
         knowledge_base_id=knowledge_base.id,
         question="What is the meal allowance?",
         embedding_provider=provider,

@@ -163,6 +163,7 @@ async def chat_with_conversation_endpoint(
     try:
         rag_answer = await answer_knowledge_base_question(
             session=session,
+            workspace_id=conversation.workspace_id,
             knowledge_base_id=knowledge_base_id,
             question=chat_request.question,
             embedding_provider=create_embedding_provider(settings),
@@ -266,6 +267,7 @@ async def stream_conversation_answer(
         context_messages = await list_messages_for_conversation(session, conversation)
         rag_answer = await answer_knowledge_base_question(
             session=session,
+            workspace_id=conversation.workspace_id,
             knowledge_base_id=knowledge_base_id,
             question=chat_request.question,
             embedding_provider=create_embedding_provider(settings),

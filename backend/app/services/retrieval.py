@@ -98,6 +98,7 @@ def create_retrieval_config(settings: "Settings") -> RetrievalConfig:
 
 async def retrieve_similar_chunks(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     query: str,
     provider: EmbeddingProvider,
@@ -109,6 +110,7 @@ async def retrieve_similar_chunks(
 
     result = await session.execute(
         build_vector_search_statement(
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             query_embedding=query_embedding,
             limit=effective_config.retrieval_top_k,
@@ -128,6 +130,7 @@ async def retrieve_similar_chunks(
 
 async def retrieve_keyword_chunks(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     query: str,
     limit: int,
@@ -138,6 +141,7 @@ async def retrieve_keyword_chunks(
 
     result = await session.execute(
         build_keyword_search_statement(
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             query=query,
             limit=limit,
@@ -155,6 +159,7 @@ async def retrieve_keyword_chunks(
 
 async def retrieve_hybrid_chunks(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     query: str,
     provider: EmbeddingProvider,
@@ -171,6 +176,7 @@ async def retrieve_hybrid_chunks(
     )
     vector_results = await retrieve_similar_chunks(
         session=session,
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=query,
         provider=provider,
@@ -179,6 +185,7 @@ async def retrieve_hybrid_chunks(
     )
     keyword_results = await retrieve_keyword_chunks(
         session=session,
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=query,
         limit=effective_config.hybrid_source_top_k,
@@ -269,6 +276,7 @@ def merge_hybrid_results(
 
 
 def build_vector_search_statement(
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     query_embedding: list[float],
     limit: int,
@@ -279,6 +287,7 @@ def build_vector_search_statement(
         select(DocumentChunk, distance)
         .options(selectinload(DocumentChunk.document))
         .where(
+            DocumentChunk.workspace_id == workspace_id,
             DocumentChunk.knowledge_base_id == knowledge_base_id,
             DocumentChunk.embedding.is_not(None),
             DocumentChunk.embedding_status == ChunkEmbeddingStatus.EMBEDDED.value,
@@ -290,6 +299,7 @@ def build_vector_search_statement(
 
 
 def build_keyword_search_statement(
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     query: str,
     limit: int,
@@ -301,6 +311,7 @@ def build_keyword_search_statement(
         select(DocumentChunk, rank)
         .options(selectinload(DocumentChunk.document))
         .where(
+            DocumentChunk.workspace_id == workspace_id,
             DocumentChunk.knowledge_base_id == knowledge_base_id,
             DocumentChunk.search_vector.op("@@")(ts_query),
             *build_metadata_filter_conditions(metadata_filter),

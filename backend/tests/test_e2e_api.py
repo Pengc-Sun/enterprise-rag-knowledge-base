@@ -228,6 +228,7 @@ def test_register_login_create_upload_query_and_read_sources(
 
     async def fake_answer_knowledge_base_question(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         question: str,
         embedding_provider: object,
@@ -244,6 +245,7 @@ def test_register_login_create_upload_query_and_read_sources(
     ) -> RAGAnswer:
         knowledge_base = cast(KnowledgeBase, state["knowledge_base"])
         chunk = cast(DocumentChunk, state["chunk"])
+        assert workspace_id == knowledge_base.workspace_id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What is the maximum meal allowance?"
         assert temperature == 0.2
@@ -303,10 +305,11 @@ def test_register_login_create_upload_query_and_read_sources(
         fake_process_document_for_retrieval,
     )
     monkeypatch.setattr(document_endpoints, "get_settings", make_settings)
+    monkeypatch.setattr(rag_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
     monkeypatch.setattr(
         rag_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     monkeypatch.setattr(
         rag_endpoints,
@@ -370,7 +373,7 @@ def test_register_login_create_upload_query_and_read_sources(
         assert upload_body["data"]["chunk_count"] == 1
 
         query_response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base_id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base_id}/query?workspace_id={workspace.id}",
             headers=headers,
             json={"question": "What is the maximum meal allowance?"},
         )

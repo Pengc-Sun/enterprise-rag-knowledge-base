@@ -1,14 +1,16 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.errors import provider_exception_to_http
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
+from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
+from backend.app.models.workspace import Workspace
 from backend.app.schemas.rag import (
     RAGMetadataFilter,
     RAGQueryRequest,
@@ -19,7 +21,7 @@ from backend.app.schemas.rag import (
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.embeddings import EmbeddingProviderError, create_embedding_provider
-from backend.app.services.knowledge_bases import READ_PERMISSIONS, get_knowledge_base_for_user
+from backend.app.services.knowledge_bases import get_knowledge_base_for_workspace
 from backend.app.services.llms import LLMProviderError, create_llm_provider
 from backend.app.services.query_rewriting import (
     QueryRewriteMessage,
@@ -29,33 +31,67 @@ from backend.app.services.rag import answer_knowledge_base_question
 from backend.app.services.rerankers import RerankerError, create_reranker
 from backend.app.services.retrieval import RetrievalMetadataFilter, create_retrieval_config
 from backend.app.services.retrieval_debug import debug_knowledge_base_retrieval
+from backend.app.services.workspaces import READ_ROLES, get_workspace_for_user
 
 router = APIRouter(prefix="/knowledge-bases/{knowledge_base_id}/query", tags=["rag"])
+workspace_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/query",
+    tags=["rag"],
+)
 
 
 @router.post("", response_model=APIResponse[RAGQueryResponse])
 async def query_knowledge_base_endpoint(
     knowledge_base_id: uuid.UUID,
     query_request: RAGQueryRequest,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[RAGQueryResponse]:
-    knowledge_base = await get_knowledge_base_for_user(
+    return await query_knowledge_base_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        query_request,
+        current_user,
         session,
+    )
+
+
+@workspace_router.post("", response_model=APIResponse[RAGQueryResponse])
+async def query_workspace_knowledge_base_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    query_request: RAGQueryRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[RAGQueryResponse]:
+    return await query_knowledge_base_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        query_request,
+        current_user,
+        session,
+    )
+
+
+async def query_knowledge_base_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    query_request: RAGQueryRequest,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[RAGQueryResponse]:
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        workspace_id,
         knowledge_base_id,
         current_user.id,
-        READ_PERMISSIONS,
     )
-    if knowledge_base is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Knowledge base not found",
-        )
-
     settings = get_settings()
     try:
         rag_answer = await answer_knowledge_base_question(
             session=session,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base.id,
             question=query_request.question,
             embedding_provider=create_embedding_provider(settings),
@@ -102,25 +138,54 @@ async def query_knowledge_base_endpoint(
 async def debug_knowledge_base_retrieval_endpoint(
     knowledge_base_id: uuid.UUID,
     query_request: RAGQueryRequest,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[RAGRetrievalDebugResponse]:
-    knowledge_base = await get_knowledge_base_for_user(
+    return await debug_knowledge_base_retrieval_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        query_request,
+        current_user,
         session,
+    )
+
+
+@workspace_router.post("/debug", response_model=APIResponse[RAGRetrievalDebugResponse])
+async def debug_workspace_knowledge_base_retrieval_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    query_request: RAGQueryRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[RAGRetrievalDebugResponse]:
+    return await debug_knowledge_base_retrieval_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        query_request,
+        current_user,
+        session,
+    )
+
+
+async def debug_knowledge_base_retrieval_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    query_request: RAGQueryRequest,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[RAGRetrievalDebugResponse]:
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        workspace_id,
         knowledge_base_id,
         current_user.id,
-        READ_PERMISSIONS,
     )
-    if knowledge_base is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Knowledge base not found",
-        )
-
     settings = get_settings()
     try:
         debug_result = await debug_knowledge_base_retrieval(
             session=session,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base.id,
             question=query_request.question,
             embedding_provider=create_embedding_provider(settings),
@@ -174,3 +239,37 @@ def build_retrieval_metadata_filter(filters: RAGMetadataFilter) -> RetrievalMeta
         departments=tuple(filters.departments),
         permissions=tuple(filters.permissions),
     )
+
+
+async def get_knowledge_base_or_404(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> KnowledgeBase:
+    await get_workspace_or_404(session, workspace_id, user_id)
+    knowledge_base = await get_knowledge_base_for_workspace(
+        session,
+        knowledge_base_id,
+        workspace_id,
+    )
+    if knowledge_base is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge base not found",
+        )
+    return knowledge_base
+
+
+async def get_workspace_or_404(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Workspace:
+    workspace = await get_workspace_for_user(session, workspace_id, user_id, READ_ROLES)
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+    return workspace

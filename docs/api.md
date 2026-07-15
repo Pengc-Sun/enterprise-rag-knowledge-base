@@ -434,13 +434,18 @@ Requires workspace owner/admin access. Deletes the database row and stored file.
 
 ## RAG Endpoints
 
+RAG endpoints require authentication, workspace context, and a knowledge base that belongs to the
+supplied workspace. Retrieval candidates are filtered by both `workspace_id` and
+`knowledge_base_id`.
+
 ### Query knowledge base
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/query
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/query
+POST /api/v1/knowledge-bases/{knowledge_base_id}/query?workspace_id={workspace_id}
 ```
 
-Requires read permission.
+Requires workspace membership.
 
 Request body:
 
@@ -477,10 +482,11 @@ Source citations include document name, page number, chunk ID, original text, an
 ### Retrieval debug
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/query/debug
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/query/debug
+POST /api/v1/knowledge-bases/{knowledge_base_id}/query/debug?workspace_id={workspace_id}
 ```
 
-Requires read permission. Returns retrieval internals without generating an answer.
+Requires workspace membership. Returns retrieval internals without generating an answer.
 
 Debug candidates include:
 
@@ -593,7 +599,7 @@ Uses Server-Sent Events. The stream can emit token, metadata, source, completion
 | Delete knowledge base | workspace owner |
 | List/read documents | workspace owner, admin, editor, reviewer, viewer |
 | Upload/reprocess/delete documents | workspace owner or admin |
-| RAG query and debug | owner, editor, viewer |
+| RAG query and debug | workspace owner, admin, editor, reviewer, viewer |
 | Conversations and chat | owner, editor, viewer |
 
 ## API Testing

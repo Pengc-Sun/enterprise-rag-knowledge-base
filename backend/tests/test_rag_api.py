@@ -14,6 +14,7 @@ from backend.app.main import app
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.models.workspace import Workspace
 from backend.app.services.embeddings import EmbeddingProviderConfigurationError
 from backend.app.services.llms import (
     LLMProviderName,
@@ -41,26 +42,46 @@ def make_user() -> User:
     )
 
 
-def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
+def make_workspace(owner_id: uuid.UUID) -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace(
+        id=uuid.uuid4(),
+        name="Policy Workspace",
+        slug=f"policy-{str(owner_id).replace('-', '')}",
+        owner_id=owner_id,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_knowledge_base(
+    owner_id: uuid.UUID,
+    workspace_id: uuid.UUID | None = None,
+) -> KnowledgeBase:
     now = datetime.now(UTC)
     return KnowledgeBase(
         id=uuid.uuid4(),
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id or uuid.uuid4(),
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
     )
 
 
-def make_chunk(knowledge_base_id: uuid.UUID) -> DocumentChunk:
+def make_chunk(
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID | None = None,
+) -> DocumentChunk:
+    effective_workspace_id = workspace_id or uuid.uuid4()
     now = datetime.now(UTC)
     document = Document(
         id=uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=effective_workspace_id,
         filename="architecture.md",
         file_type="md",
         file_size=128,
@@ -75,6 +96,7 @@ def make_chunk(knowledge_base_id: uuid.UUID) -> DocumentChunk:
     chunk = DocumentChunk(
         id=uuid.uuid4(),
         document_id=document.id,
+        workspace_id=effective_workspace_id,
         knowledge_base_id=knowledge_base_id,
         content="context body",
         chunk_index=0,
@@ -108,24 +130,51 @@ def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    chunk = make_chunk(knowledge_base.id)
+def patch_workspace_and_knowledge_base(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    workspace: Workspace | None,
+    knowledge_base: KnowledgeBase | None,
+) -> None:
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace | None:
+        if workspace is not None:
+            assert workspace_id == workspace.id
+            assert user_id == workspace.owner_id
+            assert "viewer" in allowed_roles
+        return workspace
 
-    async def fake_get_knowledge_base_for_user(
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert "viewer" in allowed_permissions
+        workspace_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        if knowledge_base is not None:
+            assert knowledge_base_id == knowledge_base.id
+            assert workspace_id == knowledge_base.workspace_id
         return knowledge_base
+
+    monkeypatch.setattr(rag_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        rag_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+
+
+def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    chunk = make_chunk(knowledge_base.id, workspace.id)
 
     async def fake_answer_knowledge_base_question(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         question: str,
         embedding_provider: object,
@@ -140,6 +189,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert query_rewrite_config is not None
@@ -173,10 +223,10 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
             ),
         )
 
-    monkeypatch.setattr(
-        rag_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+    patch_workspace_and_knowledge_base(
+        monkeypatch,
+        workspace=workspace,
+        knowledge_base=knowledge_base,
     )
     monkeypatch.setattr(
         rag_endpoints,
@@ -216,7 +266,7 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query?workspace_id={workspace.id}",
             json={
                 "question": "What about London?",
                 "history": [{"role": "user", "content": "How does RAG work?"}],
@@ -253,22 +303,13 @@ def test_query_knowledge_base_returns_rag_answer(monkeypatch: pytest.MonkeyPatch
 
 def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    chunk = make_chunk(knowledge_base.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert "viewer" in allowed_permissions
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    chunk = make_chunk(knowledge_base.id, workspace.id)
 
     async def fake_debug_knowledge_base_retrieval(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         question: str,
         embedding_provider: object,
@@ -278,6 +319,7 @@ def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.Monke
         history: object,
         metadata_filter: object,
     ) -> RetrievalDebugResult:
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert query_rewrite_config is not None
@@ -309,10 +351,10 @@ def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.Monke
             ],
         )
 
-    monkeypatch.setattr(
-        rag_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+    patch_workspace_and_knowledge_base(
+        monkeypatch,
+        workspace=workspace,
+        knowledge_base=knowledge_base,
     )
     monkeypatch.setattr(
         rag_endpoints,
@@ -344,7 +386,7 @@ def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.Monke
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/query/debug",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query/debug?workspace_id={workspace.id}",
             json={
                 "question": "What about London?",
                 "history": [{"role": "user", "content": "How does RAG work?"}],
@@ -382,55 +424,37 @@ def test_debug_knowledge_base_retrieval_returns_scores(monkeypatch: pytest.Monke
 
 def test_query_knowledge_base_requires_read_permission(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
+    workspace = make_workspace(user.id)
     knowledge_base_id = uuid.uuid4()
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        rag_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
+    patch_workspace_and_knowledge_base(monkeypatch, workspace=None, knowledge_base=None)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base_id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base_id}/query?workspace_id={workspace.id}",
             json={"question": "How does RAG work?"},
         )
     finally:
         clear_overrides()
 
     assert response.status_code == 404
-    assert response.json()["message"] == "Knowledge base not found"
+    assert response.json()["message"] == "Workspace not found"
 
 
 def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
     async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
         raise EmbeddingProviderConfigurationError
 
-    monkeypatch.setattr(
-        rag_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+    patch_workspace_and_knowledge_base(
+        monkeypatch,
+        workspace=workspace,
+        knowledge_base=knowledge_base,
     )
     monkeypatch.setattr(
         rag_endpoints,
@@ -470,7 +494,7 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query?workspace_id={workspace.id}",
             json={"question": "How does RAG work?"},
         )
     finally:
@@ -482,21 +506,16 @@ def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.Monkey
 
 def test_query_knowledge_base_maps_llm_rate_limit_to_429(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
     async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
         raise LLMProviderRateLimitError
 
-    monkeypatch.setattr(
-        rag_endpoints, "get_knowledge_base_for_user", fake_get_knowledge_base_for_user
+    patch_workspace_and_knowledge_base(
+        monkeypatch,
+        workspace=workspace,
+        knowledge_base=knowledge_base,
     )
     monkeypatch.setattr(
         rag_endpoints, "answer_knowledge_base_question", fake_answer_knowledge_base_question
@@ -506,7 +525,7 @@ def test_query_knowledge_base_maps_llm_rate_limit_to_429(monkeypatch: pytest.Mon
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query?workspace_id={workspace.id}",
             json={"question": "How does RAG work?"},
             headers={"X-Request-ID": "rate-limit-request"},
         )
@@ -522,21 +541,16 @@ def test_query_knowledge_base_maps_llm_rate_limit_to_429(monkeypatch: pytest.Mon
 
 def test_query_knowledge_base_maps_llm_timeout_to_504(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
     async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
         raise LLMProviderTimeoutError
 
-    monkeypatch.setattr(
-        rag_endpoints, "get_knowledge_base_for_user", fake_get_knowledge_base_for_user
+    patch_workspace_and_knowledge_base(
+        monkeypatch,
+        workspace=workspace,
+        knowledge_base=knowledge_base,
     )
     monkeypatch.setattr(
         rag_endpoints, "answer_knowledge_base_question", fake_answer_knowledge_base_question
@@ -546,7 +560,7 @@ def test_query_knowledge_base_maps_llm_timeout_to_504(monkeypatch: pytest.Monkey
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/query",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/query?workspace_id={workspace.id}",
             json={"question": "How does RAG work?"},
         )
     finally:

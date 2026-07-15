@@ -58,10 +58,15 @@ class FakeEmbeddingProvider(EmbeddingProvider):
         return [1.0, 0.0, 0.0]
 
 
-def make_chunk(index: int, knowledge_base_id: uuid.UUID) -> DocumentChunk:
+def make_chunk(
+    index: int,
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID | None = None,
+) -> DocumentChunk:
     return DocumentChunk(
         id=uuid.uuid4(),
         document_id=uuid.uuid4(),
+        workspace_id=workspace_id or uuid.uuid4(),
         knowledge_base_id=knowledge_base_id,
         content=f"chunk {index}",
         chunk_index=index,
@@ -125,10 +130,12 @@ def test_retrieval_metadata_filter_rejects_invalid_date_range() -> None:
 
 
 def test_build_vector_search_statement_applies_metadata_filters() -> None:
+    workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     document_id = uuid.uuid4()
 
     statement = build_vector_search_statement(
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query_embedding=[1.0, 0.0, 0.0],
         limit=10,
@@ -153,15 +160,18 @@ def test_build_vector_search_statement_applies_metadata_filters() -> None:
 
 
 def test_build_vector_search_statement_filters_and_orders() -> None:
+    workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
 
     statement = build_vector_search_statement(
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query_embedding=[1.0, 0.0, 0.0],
         limit=10,
     )
     sql = compile_statement(statement)
 
+    assert "document_chunks.workspace_id" in sql
     assert "document_chunks.knowledge_base_id" in sql
     assert "document_chunks.embedding IS NOT NULL" in sql
     assert "document_chunks.embedding_status" in sql
@@ -171,15 +181,18 @@ def test_build_vector_search_statement_filters_and_orders() -> None:
 
 
 def test_build_keyword_search_statement_uses_postgresql_full_text_search() -> None:
+    workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
 
     statement = build_keyword_search_statement(
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query="POLICY-2024-IT-07",
         limit=10,
     )
     sql = compile_statement(statement)
 
+    assert "document_chunks.workspace_id" in sql
     assert "document_chunks.knowledge_base_id" in sql
     assert "websearch_to_tsquery" in sql
     assert "document_chunks.search_vector @@" in sql
@@ -201,6 +214,7 @@ def test_build_keyword_search_statement_accepts_codes_policy_numbers_and_models(
     query: str,
 ) -> None:
     statement = build_keyword_search_statement(
+        workspace_id=uuid.uuid4(),
         knowledge_base_id=uuid.uuid4(),
         query=query,
         limit=5,
@@ -298,17 +312,19 @@ def test_merge_hybrid_results_uses_rrf_for_backward_compatibility() -> None:
 
 @pytest.mark.asyncio
 async def test_retrieve_similar_chunks_embeds_query_and_returns_final_context() -> None:
+    workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     rows = [
-        (make_chunk(0, knowledge_base_id), 0.1),
-        (make_chunk(1, knowledge_base_id), 0.2),
-        (make_chunk(2, knowledge_base_id), 0.5),
+        (make_chunk(0, knowledge_base_id, workspace_id), 0.1),
+        (make_chunk(1, knowledge_base_id, workspace_id), 0.2),
+        (make_chunk(2, knowledge_base_id, workspace_id), 0.5),
     ]
     session = FakeSession(rows)
     provider = FakeEmbeddingProvider()
 
     retrieved_chunks = await retrieve_similar_chunks(
         session,  # type: ignore[arg-type]
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query="What is the plan?",
         provider=provider,
@@ -323,15 +339,17 @@ async def test_retrieve_similar_chunks_embeds_query_and_returns_final_context() 
 
 @pytest.mark.asyncio
 async def test_retrieve_keyword_chunks_returns_keyword_scores() -> None:
+    workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     rows = [
-        (make_chunk(0, knowledge_base_id), 0.8),
-        (make_chunk(1, knowledge_base_id), 0.4),
+        (make_chunk(0, knowledge_base_id, workspace_id), 0.8),
+        (make_chunk(1, knowledge_base_id, workspace_id), 0.4),
     ]
     session = FakeSession(rows)
 
     retrieved_chunks = await retrieve_keyword_chunks(
         session,  # type: ignore[arg-type]
+        workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query="A100-X9",
         limit=5,
@@ -347,6 +365,7 @@ async def test_retrieve_keyword_chunks_rejects_invalid_limit() -> None:
     with pytest.raises(ValueError):
         await retrieve_keyword_chunks(
             FakeSession([]),  # type: ignore[arg-type]
+            workspace_id=uuid.uuid4(),
             knowledge_base_id=uuid.uuid4(),
             query="policy",
             limit=0,
@@ -357,13 +376,15 @@ async def test_retrieve_keyword_chunks_rejects_invalid_limit() -> None:
 async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
-    vector_chunk = make_chunk(0, knowledge_base_id)
-    keyword_chunk = make_chunk(1, knowledge_base_id)
+    vector_chunk = make_chunk(0, knowledge_base_id, expected_workspace_id)
+    keyword_chunk = make_chunk(1, knowledge_base_id, expected_workspace_id)
     calls: list[str] = []
 
     async def fake_retrieve_similar_chunks(
         session: object,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         query: str,
         provider: EmbeddingProvider,
@@ -371,6 +392,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
         metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[RetrievedChunk]:
         calls.append("vector")
+        assert workspace_id == expected_workspace_id
         assert query == "POLICY-2024-IT-07"
         assert config == RetrievalConfig(
             retrieval_top_k=4,
@@ -384,12 +406,14 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
 
     async def fake_retrieve_keyword_chunks(
         session: object,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
         query: str,
         limit: int,
         metadata_filter: RetrievalMetadataFilter | None = None,
     ) -> list[KeywordRetrievedChunk]:
         calls.append("keyword")
+        assert workspace_id == expected_workspace_id
         assert query == "POLICY-2024-IT-07"
         assert limit == 4
         assert metadata_filter == RetrievalMetadataFilter(file_types=("md",))
@@ -406,6 +430,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
 
     candidates = await retrieve_hybrid_chunks(
         session=object(),  # type: ignore[arg-type]
+        workspace_id=expected_workspace_id,
         knowledge_base_id=knowledge_base_id,
         query="POLICY-2024-IT-07",
         provider=FakeEmbeddingProvider(),

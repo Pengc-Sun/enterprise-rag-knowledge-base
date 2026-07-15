@@ -52,6 +52,7 @@ class RAGAnswer:
 
 async def answer_knowledge_base_question(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     question: str,
     embedding_provider: EmbeddingProvider,
@@ -79,6 +80,7 @@ async def answer_knowledge_base_question(
         retrieval_started_at = time.perf_counter()
         candidate_chunks = await retrieve_hybrid_chunks(
             session=session,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             query=retrieval_query,
             provider=embedding_provider,
