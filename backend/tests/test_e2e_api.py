@@ -138,23 +138,17 @@ def test_register_login_create_upload_query_and_read_sources(
         user = cast(User, state["user"])
         return user if user.id == user_id else None
 
-    async def fake_get_or_create_default_workspace_for_user(
+    async def fake_get_workspace_for_user(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
     ) -> Workspace:
         user = cast(User, state["user"])
+        workspace = cast(Workspace, state["workspace"])
+        assert workspace_id == workspace.id
         assert user_id == user.id
-        now = datetime.now(UTC)
-        workspace = Workspace(
-            id=uuid.uuid4(),
-            name="Default Workspace",
-            slug=f"v1-default-{str(user_id).replace('-', '')}",
-            owner_id=user_id,
-            status="active",
-            created_at=now,
-            updated_at=now,
-        )
-        state["workspace"] = workspace
+        assert "admin" in allowed_roles
         return workspace
 
     async def fake_create_knowledge_base(
@@ -266,8 +260,8 @@ def test_register_login_create_upload_query_and_read_sources(
     monkeypatch.setattr(auth_dependencies, "get_user_by_id", fake_get_user_by_id)
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_or_create_default_workspace_for_user",
-        fake_get_or_create_default_workspace_for_user,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
     )
     monkeypatch.setattr(
         knowledge_base_endpoints,
@@ -323,9 +317,21 @@ def test_register_login_create_upload_query_and_read_sources(
         assert login_response.status_code == 200
         access_token = login_response.json()["data"]["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
+        user = cast(User, state["user"])
+        now = datetime.now(UTC)
+        state["workspace"] = Workspace(
+            id=uuid.uuid4(),
+            name="Default Workspace",
+            slug=f"v1-default-{str(user.id).replace('-', '')}",
+            owner_id=user.id,
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+        workspace = cast(Workspace, state["workspace"])
 
         knowledge_base_response = client.post(
-            "/api/v1/knowledge-bases",
+            f"/api/v1/knowledge-bases?workspace_id={workspace.id}",
             headers=headers,
             json={"name": "Travel Policy", "description": "Company travel rules"},
         )

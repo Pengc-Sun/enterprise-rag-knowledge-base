@@ -288,12 +288,15 @@ Requires `owner` or `admin` role. The workspace owner membership cannot be remov
 
 ## Knowledge Base Endpoints
 
-All knowledge base endpoints require authentication.
+All knowledge base endpoints require authentication and workspace context. The v2 workspace-scoped
+routes are preferred. The top-level routes remain available only when `workspace_id` is supplied as a
+query parameter.
 
 ### Create knowledge base
 
 ```text
-POST /api/v1/knowledge-bases
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases
+POST /api/v1/knowledge-bases?workspace_id={workspace_id}
 ```
 
 Request body:
@@ -305,31 +308,35 @@ Request body:
 }
 ```
 
-Creates a private knowledge base owned by the current user.
+Requires workspace owner/admin access. Creates a private knowledge base owned by the current user
+inside the selected workspace.
 
 ### List knowledge bases
 
 ```text
-GET /api/v1/knowledge-bases
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases
+GET /api/v1/knowledge-bases?workspace_id={workspace_id}
 ```
 
-Lists knowledge bases visible to the current user.
+Requires workspace membership. Lists knowledge bases in the selected workspace.
 
 ### Read knowledge base
 
 ```text
-GET /api/v1/knowledge-bases/{knowledge_base_id}
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}
+GET /api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace_id}
 ```
 
-Requires read permission.
+Requires workspace membership. The knowledge base must belong to the supplied workspace.
 
 ### Update knowledge base
 
 ```text
-PATCH /api/v1/knowledge-bases/{knowledge_base_id}
+PATCH /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}
+PATCH /api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace_id}
 ```
 
-Requires write permission.
+Requires workspace owner/admin access.
 
 Request body fields are optional:
 
@@ -343,10 +350,11 @@ Request body fields are optional:
 ### Delete knowledge base
 
 ```text
-DELETE /api/v1/knowledge-bases/{knowledge_base_id}
+DELETE /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace_id}
 ```
 
-Requires owner permission. Returns `204 No Content`.
+Requires workspace owner access. Returns `204 No Content`.
 
 ## Document Endpoints
 

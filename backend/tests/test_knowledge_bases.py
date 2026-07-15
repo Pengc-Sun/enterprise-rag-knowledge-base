@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
 
@@ -30,28 +31,28 @@ def make_user() -> User:
     )
 
 
-def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
+def make_workspace(owner_id: uuid.UUID) -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace(
+        id=uuid.uuid4(),
+        name="Policy Workspace",
+        slug=f"policy-{str(owner_id).replace('-', '')}",
+        owner_id=owner_id,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_knowledge_base(owner_id: uuid.UUID, workspace_id: uuid.UUID) -> KnowledgeBase:
     now = datetime.now(UTC)
     return KnowledgeBase(
         id=uuid.uuid4(),
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
-        created_at=now,
-        updated_at=now,
-    )
-
-
-def make_workspace(owner_id: uuid.UUID) -> Workspace:
-    now = datetime.now(UTC)
-    return Workspace(
-        id=uuid.uuid4(),
-        name="Default Workspace",
-        slug=f"v1-default-{str(owner_id).replace('-', '')}",
-        owner_id=owner_id,
-        status="active",
         created_at=now,
         updated_at=now,
     )
@@ -73,17 +74,57 @@ def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def test_create_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
-    user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    workspace = make_workspace(user.id)
-
-    async def fake_get_or_create_default_workspace_for_user(
+def patch_workspace_access(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    workspace: Workspace | None,
+    expected_roles: Callable[[frozenset[str]], None] | None = None,
+) -> None:
+    async def fake_get_workspace_for_user(
         session: AsyncSession,
+        workspace_id: uuid.UUID,
         user_id: uuid.UUID,
-    ) -> Workspace:
-        assert user_id == user.id
+        allowed_roles: frozenset[str],
+    ) -> Workspace | None:
+        if workspace is not None:
+            assert workspace_id == workspace.id
+            assert user_id == workspace.owner_id
+        if expected_roles is not None:
+            expected_roles(allowed_roles)
         return workspace
+
+    monkeypatch.setattr(
+        knowledge_base_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+
+
+def assert_read_roles(roles: frozenset[str]) -> None:
+    assert "viewer" in roles
+
+
+def assert_write_roles(roles: frozenset[str]) -> None:
+    assert "admin" in roles
+    assert "viewer" not in roles
+
+
+def assert_owner_roles(roles: frozenset[str]) -> None:
+    assert roles == frozenset({"owner"})
+
+
+def test_create_knowledge_base_requires_workspace_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+
+    patch_workspace_access(
+        monkeypatch,
+        workspace=workspace,
+        expected_roles=assert_write_roles,
+    )
 
     async def fake_create_knowledge_base(
         session: AsyncSession,
@@ -98,11 +139,6 @@ def test_create_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_or_create_default_workspace_for_user",
-        fake_get_or_create_default_workspace_for_user,
-    )
-    monkeypatch.setattr(
-        knowledge_base_endpoints,
         "create_knowledge_base",
         fake_create_knowledge_base,
     )
@@ -111,7 +147,7 @@ def test_create_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         client = TestClient(app)
         response = client.post(
-            "/api/v1/knowledge-bases",
+            f"/api/v1/knowledge-bases?workspace_id={workspace.id}",
             json={
                 "name": "Engineering Handbook",
                 "description": "Internal docs",
@@ -125,31 +161,93 @@ def test_create_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     body = response.json()
     assert body["success"] is True
     assert body["message"] == "knowledge base created"
-    assert body["data"]["name"] == "Engineering Handbook"
+    assert body["data"]["workspace_id"] == str(workspace.id)
     assert body["data"]["owner_id"] == str(user.id)
 
 
-def test_list_knowledge_bases(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_workspace_knowledge_base_route(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
-    async def fake_list_knowledge_bases_for_user(
+    patch_workspace_access(monkeypatch, workspace=workspace)
+
+    async def fake_create_knowledge_base(
         session: AsyncSession,
-        user_id: uuid.UUID,
-    ) -> list[KnowledgeBase]:
-        assert user_id == user.id
-        return [knowledge_base]
+        owner_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        knowledge_base_create: KnowledgeBaseCreate,
+    ) -> KnowledgeBase:
+        assert owner_id == user.id
+        assert workspace_id == workspace.id
+        return knowledge_base
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "list_knowledge_bases_for_user",
-        fake_list_knowledge_bases_for_user,
+        "create_knowledge_base",
+        fake_create_knowledge_base,
     )
     set_overrides(user)
 
     try:
         client = TestClient(app)
-        response = client.get("/api/v1/knowledge-bases")
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases",
+            json={"name": "Engineering Handbook"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    assert response.json()["data"]["workspace_id"] == str(workspace.id)
+
+
+def test_create_knowledge_base_without_workspace_id_returns_422() -> None:
+    user = make_user()
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/knowledge-bases",
+            json={"name": "Engineering Handbook"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 422
+
+
+def test_list_knowledge_bases_is_scoped_to_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+
+    patch_workspace_access(
+        monkeypatch,
+        workspace=workspace,
+        expected_roles=assert_read_roles,
+    )
+
+    async def fake_list_knowledge_bases_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+    ) -> list[KnowledgeBase]:
+        assert workspace_id == workspace.id
+        return [knowledge_base]
+
+    monkeypatch.setattr(
+        knowledge_base_endpoints,
+        "list_knowledge_bases_for_workspace",
+        fake_list_knowledge_bases_for_workspace,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/knowledge-bases?workspace_id={workspace.id}")
     finally:
         clear_overrides()
 
@@ -157,34 +255,39 @@ def test_list_knowledge_bases(monkeypatch: pytest.MonkeyPatch) -> None:
     body = response.json()
     assert body["success"] is True
     assert len(body["data"]) == 1
-    assert body["data"][0]["id"] == str(knowledge_base.id)
+    assert body["data"][0]["workspace_id"] == str(workspace.id)
 
 
-def test_read_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_knowledge_base_is_scoped_to_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
-    async def fake_get_knowledge_base_for_user(
+    patch_workspace_access(monkeypatch, workspace=workspace)
+
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
+        workspace_id: uuid.UUID,
     ) -> KnowledgeBase:
         assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert "viewer" in allowed_permissions
+        assert workspace_id == workspace.id
         return knowledge_base
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     set_overrides(user)
 
     try:
         client = TestClient(app)
-        response = client.get(f"/api/v1/knowledge-bases/{knowledge_base.id}")
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}?workspace_id={workspace.id}"
+        )
     finally:
         clear_overrides()
 
@@ -192,18 +295,25 @@ def test_read_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.json()["data"]["id"] == str(knowledge_base.id)
 
 
-def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_update_knowledge_base_requires_workspace_write_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
 
-    async def fake_get_knowledge_base_for_user(
+    patch_workspace_access(
+        monkeypatch,
+        workspace=workspace,
+        expected_roles=assert_write_roles,
+    )
+
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
+        workspace_id: uuid.UUID,
     ) -> KnowledgeBase:
-        assert "editor" in allowed_permissions
-        assert "viewer" not in allowed_permissions
+        assert workspace_id == workspace.id
         return knowledge_base
 
     async def fake_update_knowledge_base(
@@ -218,8 +328,8 @@ def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     monkeypatch.setattr(
         knowledge_base_endpoints,
@@ -231,7 +341,7 @@ def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         client = TestClient(app)
         response = client.patch(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}",
+            f"/api/v1/knowledge-bases/{knowledge_base.id}?workspace_id={workspace.id}",
             json={"name": "Public Handbook", "visibility": "public"},
         )
     finally:
@@ -244,18 +354,27 @@ def test_update_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["data"]["visibility"] == "public"
 
 
-def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_delete_knowledge_base_requires_workspace_owner_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
     deleted = False
 
-    async def fake_get_knowledge_base_for_user(
+    patch_workspace_access(
+        monkeypatch,
+        workspace=workspace,
+        expected_roles=assert_owner_roles,
+    )
+
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
+        workspace_id: uuid.UUID,
     ) -> KnowledgeBase:
-        assert allowed_permissions == frozenset({"owner"})
+        assert knowledge_base_id == knowledge_base.id
+        assert workspace_id == workspace.id
         return knowledge_base
 
     async def fake_delete_knowledge_base(
@@ -267,8 +386,8 @@ def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     monkeypatch.setattr(
         knowledge_base_endpoints,
@@ -279,7 +398,9 @@ def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
 
     try:
         client = TestClient(app)
-        response = client.delete(f"/api/v1/knowledge-bases/{knowledge_base.id}")
+        response = client.delete(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}?workspace_id={workspace.id}"
+        )
     finally:
         clear_overrides()
 
@@ -288,34 +409,58 @@ def test_delete_knowledge_base(monkeypatch: pytest.MonkeyPatch) -> None:
     assert deleted is True
 
 
-def test_read_knowledge_base_returns_404_when_not_owned(
+def test_read_knowledge_base_returns_404_when_workspace_access_is_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
+    workspace = make_workspace(user.id)
     knowledge_base_id = uuid.uuid4()
 
-    async def fake_get_knowledge_base_for_user(
+    patch_workspace_access(monkeypatch, workspace=None)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace not found"
+
+
+def test_read_knowledge_base_returns_404_when_not_in_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base_id = uuid.uuid4()
+
+    patch_workspace_access(monkeypatch, workspace=workspace)
+
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
+        workspace_id: uuid.UUID,
     ) -> None:
         return None
 
     monkeypatch.setattr(
         knowledge_base_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
     )
     set_overrides(user)
 
     try:
         client = TestClient(app)
-        response = client.get(f"/api/v1/knowledge-bases/{knowledge_base_id}")
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base_id}?workspace_id={workspace.id}"
+        )
     finally:
         clear_overrides()
 
     assert response.status_code == 404
-    body = response.json()
-    assert body["success"] is False
-    assert body["message"] == "Knowledge base not found"
+    assert response.json()["message"] == "Knowledge base not found"

@@ -74,6 +74,18 @@ async def list_knowledge_bases_for_user(
     return list(result.scalars().all())
 
 
+async def list_knowledge_bases_for_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> list[KnowledgeBase]:
+    result = await session.execute(
+        select(KnowledgeBase)
+        .where(KnowledgeBase.workspace_id == workspace_id)
+        .order_by(KnowledgeBase.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_knowledge_base_for_owner(
     session: AsyncSession,
     knowledge_base_id: uuid.UUID,
@@ -83,6 +95,20 @@ async def get_knowledge_base_for_owner(
         select(KnowledgeBase).where(
             KnowledgeBase.id == knowledge_base_id,
             KnowledgeBase.owner_id == owner_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_knowledge_base_for_workspace(
+    session: AsyncSession,
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> KnowledgeBase | None:
+    result = await session.execute(
+        select(KnowledgeBase).where(
+            KnowledgeBase.id == knowledge_base_id,
+            KnowledgeBase.workspace_id == workspace_id,
         )
     )
     return result.scalar_one_or_none()
