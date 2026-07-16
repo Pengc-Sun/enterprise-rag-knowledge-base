@@ -346,6 +346,54 @@ def test_upload_document_requires_workspace_write_role(monkeypatch: pytest.Monke
     assert response.json()["message"] == "Workspace not found"
 
 
+def test_upload_document_rejects_knowledge_base_from_another_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    other_workspace = make_workspace(user.id)
+    other_knowledge_base = make_knowledge_base(user.id, other_workspace.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
+
+    async def fake_get_knowledge_base_for_workspace(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> None:
+        assert knowledge_base_id == other_knowledge_base.id
+        assert workspace_id == workspace.id
+        return None
+
+    async def fake_create_document_from_upload(*args: object, **kwargs: object) -> Document:
+        raise AssertionError("cross-workspace upload must stop before document creation")
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+    monkeypatch.setattr(
+        document_endpoints,
+        "create_document_from_upload",
+        fake_create_document_from_upload,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{other_knowledge_base.id}/documents",
+            files={"file": ("architecture.pdf", b"content", "application/pdf")},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Knowledge base not found"
+
+
 def test_upload_document_rejects_duplicate_document(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     workspace = make_workspace(user.id)
@@ -511,6 +559,48 @@ def test_reprocess_document_returns_404_for_cross_workspace_document(
         response = client.post(
             f"/api/v1/knowledge-bases/{knowledge_base.id}/documents/{document_id}/reprocess"
             f"?workspace_id={workspace.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Document not found"
+
+
+def test_read_document_returns_404_for_cross_workspace_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    other_document = make_document(knowledge_base.id, uuid.uuid4(), user.id)
+
+    patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_read_roles)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+
+    async def fake_get_document_for_workspace_knowledge_base(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        knowledge_base_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> None:
+        assert workspace_id == workspace.id
+        assert knowledge_base_id == knowledge_base.id
+        assert document_id == other_document.id
+        return None
+
+    monkeypatch.setattr(
+        document_endpoints,
+        "get_document_for_workspace_knowledge_base",
+        fake_get_document_for_workspace_knowledge_base,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/documents/{other_document.id}"
         )
     finally:
         clear_overrides()

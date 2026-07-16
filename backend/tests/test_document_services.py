@@ -74,6 +74,15 @@ class FakeQuerySession:
         return self.result
 
 
+def compile_statement(statement: object) -> str:
+    return str(statement.compile(compile_kwargs={"literal_binds": False}))  # type: ignore[attr-defined]
+
+
+def compile_params(statement: object) -> dict[str, object]:
+    compiled = statement.compile(compile_kwargs={"literal_binds": False})  # type: ignore[attr-defined]
+    return dict(compiled.params)
+
+
 def make_user() -> User:
     now = datetime.now(UTC)
     return User(
@@ -246,6 +255,56 @@ async def test_create_document_from_upload_rejects_oversized_file(tmp_path: Path
         )
 
     assert list(tmp_path.rglob("*")) == []
+
+
+@pytest.mark.asyncio
+async def test_get_document_for_workspace_knowledge_base_filters_cross_workspace() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    session = FakeQuerySession(FakeScalarResult(None))
+
+    document = await get_document_for_workspace_knowledge_base(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        knowledge_base_id,
+        document_id,
+    )
+
+    assert document is None
+    assert session.statement is not None
+    sql = compile_statement(session.statement)
+    params = compile_params(session.statement)
+    assert "documents.id" in sql
+    assert "documents.workspace_id" in sql
+    assert "documents.knowledge_base_id" in sql
+    assert params["id_1"] == document_id
+    assert params["workspace_id_1"] == workspace_id
+    assert params["knowledge_base_id_1"] == knowledge_base_id
+
+
+@pytest.mark.asyncio
+async def test_list_documents_for_workspace_knowledge_base_filters_chunks_by_workspace() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    session = FakeQuerySession(FakeDocumentListResult([]))
+
+    documents = await list_documents_for_workspace_knowledge_base(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        knowledge_base_id,
+    )
+
+    assert documents == []
+    assert session.statement is not None
+    sql = compile_statement(session.statement)
+    params = compile_params(session.statement)
+    assert "documents.workspace_id" in sql
+    assert "documents.knowledge_base_id" in sql
+    assert "document_chunks.workspace_id" in sql
+    assert params["workspace_id_1"] == workspace_id
+    assert params["workspace_id_2"] == workspace_id
+    assert params["knowledge_base_id_1"] == knowledge_base_id
 
 
 @pytest.mark.asyncio

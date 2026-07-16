@@ -712,6 +712,52 @@ def test_read_conversation_returns_404_when_not_owned(
     assert response.json()["message"] == "Conversation not found"
 
 
+def test_read_conversation_rejects_knowledge_base_from_another_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    other_workspace = make_workspace(user.id)
+    other_knowledge_base = make_knowledge_base(user.id, other_workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+
+    async def fake_get_knowledge_base_for_workspace(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> None:
+        assert knowledge_base_id == other_knowledge_base.id
+        assert workspace_id == workspace.id
+        return None
+
+    async def fake_get_conversation_for_user(*args: object, **kwargs: object) -> Conversation:
+        raise AssertionError("cross-workspace request must stop before conversation lookup")
+
+    monkeypatch.setattr(
+        conversation_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+    monkeypatch.setattr(
+        conversation_endpoints,
+        "get_conversation_for_user",
+        fake_get_conversation_for_user,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{other_knowledge_base.id}/conversations/{uuid.uuid4()}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Knowledge base not found"
+
+
 def test_legacy_conversation_route_requires_workspace_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

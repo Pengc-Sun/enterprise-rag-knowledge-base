@@ -180,6 +180,24 @@ def test_build_vector_search_statement_filters_and_orders() -> None:
     assert "LIMIT" in sql
 
 
+def test_vector_search_binds_workspace_and_knowledge_base_ids() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    other_workspace_id = uuid.uuid4()
+
+    statement = build_vector_search_statement(
+        workspace_id=workspace_id,
+        knowledge_base_id=knowledge_base_id,
+        query_embedding=[1.0, 0.0, 0.0],
+        limit=10,
+    )
+    params = compile_params(statement)
+
+    assert params["workspace_id_1"] == workspace_id
+    assert params["workspace_id_1"] != other_workspace_id
+    assert params["knowledge_base_id_1"] == knowledge_base_id
+
+
 def test_build_keyword_search_statement_uses_postgresql_full_text_search() -> None:
     workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
@@ -200,6 +218,24 @@ def test_build_keyword_search_statement_uses_postgresql_full_text_search() -> No
     assert "ORDER BY keyword_score DESC" in sql
     assert "document_chunks.chunk_index ASC" in sql
     assert "LIMIT" in sql
+
+
+def test_keyword_search_binds_workspace_and_knowledge_base_ids() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    other_workspace_id = uuid.uuid4()
+
+    statement = build_keyword_search_statement(
+        workspace_id=workspace_id,
+        knowledge_base_id=knowledge_base_id,
+        query="travel policy",
+        limit=10,
+    )
+    params = compile_params(statement)
+
+    assert params["workspace_id_1"] == workspace_id
+    assert params["workspace_id_1"] != other_workspace_id
+    assert params["knowledge_base_id_1"] == knowledge_base_id
 
 
 @pytest.mark.parametrize(
@@ -456,3 +492,7 @@ async def test_retrieve_hybrid_chunks_runs_vector_and_keyword_searches(
 
 def compile_statement(statement: Any) -> str:
     return str(statement.compile(compile_kwargs={"literal_binds": False}))
+
+
+def compile_params(statement: Any) -> dict[str, object]:
+    return dict(statement.compile(compile_kwargs={"literal_binds": False}).params)

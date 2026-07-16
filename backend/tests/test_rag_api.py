@@ -443,6 +443,64 @@ def test_query_knowledge_base_requires_read_permission(monkeypatch: pytest.Monke
     assert response.json()["message"] == "Workspace not found"
 
 
+def test_query_knowledge_base_rejects_cross_workspace_knowledge_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    other_workspace = make_workspace(user.id)
+    other_knowledge_base = make_knowledge_base(user.id, other_workspace.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert workspace_id == workspace.id
+        assert user_id == user.id
+        assert "viewer" in allowed_roles
+        return workspace
+
+    async def fake_get_knowledge_base_for_workspace(
+        session: AsyncSession,
+        knowledge_base_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+    ) -> None:
+        assert knowledge_base_id == other_knowledge_base.id
+        assert workspace_id == workspace.id
+        return None
+
+    async def fake_answer_knowledge_base_question(*args: object, **kwargs: object) -> RAGAnswer:
+        raise AssertionError("cross-workspace query must stop before RAG execution")
+
+    monkeypatch.setattr(rag_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        rag_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+    monkeypatch.setattr(
+        rag_endpoints,
+        "answer_knowledge_base_question",
+        fake_answer_knowledge_base_question,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{other_knowledge_base.id}/query",
+            json={"question": "Can this read another workspace?"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Knowledge base not found"
+
+
 def test_query_knowledge_base_returns_provider_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
     workspace = make_workspace(user.id)
