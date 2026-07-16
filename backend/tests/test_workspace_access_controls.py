@@ -10,7 +10,9 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import workspaces as workspace_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
+from backend.app.models.analysis import AnalysisTask
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
+from backend.app.models.report import Report
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
@@ -142,8 +144,50 @@ def make_template() -> WorkspaceTemplate:
                 },
             ],
         },
-        analysis_task_schema={"tasks": []},
-        report_schema={"sections": []},
+        analysis_task_schema={
+            "version": "1.0",
+            "tasks": [
+                {
+                    "key": "policy_requirements",
+                    "name": "Policy Requirement Extraction",
+                    "description": "Extract policy requirements.",
+                    "task_type": "extraction",
+                    "output_schema": {
+                        "type": "object",
+                        "required": ["requirements", "citations"],
+                        "properties": {},
+                    },
+                },
+                {
+                    "key": "policy_risk_review",
+                    "name": "Policy Risk Review",
+                    "description": "Identify policy risks.",
+                    "task_type": "risk_review",
+                    "output_schema": {
+                        "type": "object",
+                        "required": ["risks", "citations"],
+                        "properties": {},
+                    },
+                },
+            ],
+        },
+        report_schema={
+            "version": "1.0",
+            "sections": [
+                {
+                    "key": "requirements",
+                    "title": "Policy Requirements",
+                    "source_task_keys": ["policy_requirements"],
+                    "sort_order": 10,
+                },
+                {
+                    "key": "risk_findings",
+                    "title": "Risk Findings",
+                    "source_task_keys": ["policy_risk_review"],
+                    "sort_order": 20,
+                },
+            ],
+        },
         created_at=now,
         updated_at=now,
     )
@@ -275,6 +319,8 @@ async def test_create_workspace_instantiates_directories_from_template() -> None
 
     directory_paths = {directory.path for directory in workspace.directories}
     knowledge_bases = [item for item in session.added if isinstance(item, KnowledgeBase)]
+    analysis_tasks = [item for item in session.added if isinstance(item, AnalysisTask)]
+    reports = [item for item in session.added if isinstance(item, Report)]
     knowledge_base_members = [
         member
         for knowledge_base in knowledge_bases
@@ -289,6 +335,19 @@ async def test_create_workspace_instantiates_directories_from_template() -> None
     assert {knowledge_base.owner_id for knowledge_base in knowledge_bases} == {owner.id}
     assert {member.user_id for member in knowledge_base_members} == {owner.id}
     assert {member.permission for member in knowledge_base_members} == {"owner"}
+    assert {task.template_task_key for task in analysis_tasks} == {
+        "policy_requirements",
+        "policy_risk_review",
+    }
+    assert {task.status for task in analysis_tasks} == {"pending"}
+    assert {task.created_by for task in analysis_tasks} == {owner.id}
+    assert len(reports) == 1
+    assert reports[0].title == "Policy Review Report"
+    assert [section.title for section in reports[0].sections] == [
+        "Policy Requirements",
+        "Risk Findings",
+    ]
+    assert reports[0].sections[0].source_task_keys == ["policy_requirements"]
     assert {directory.workspace for directory in workspace.directories} == {workspace}
     assert session.statement is not None
     assert session.committed is True

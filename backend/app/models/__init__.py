@@ -1,3 +1,4 @@
+from backend.app.models.analysis import AnalysisTask, AnalysisTaskStatus
 from backend.app.models.audit import AuditAction, AuditLog, AuditResourceType
 from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.models.document import (
@@ -12,6 +13,7 @@ from backend.app.models.knowledge_base import (
     KnowledgeBasePermission,
     KnowledgeBaseVisibility,
 )
+from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
@@ -25,6 +27,8 @@ from backend.app.models.workspace import (
 
 __all__ = [
     "AuditAction",
+    "AnalysisTask",
+    "AnalysisTaskStatus",
     "AuditLog",
     "AuditResourceType",
     "MessageRole",
@@ -38,6 +42,10 @@ __all__ = [
     "KnowledgeBaseMember",
     "KnowledgeBasePermission",
     "KnowledgeBaseVisibility",
+    "Report",
+    "ReportSection",
+    "ReportSectionStatus",
+    "ReportStatus",
     "User",
     "UserRole",
     "Workspace",

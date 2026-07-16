@@ -198,3 +198,30 @@ def test_day25_template_default_knowledge_base_migration_updates_directory_schem
     assert "UPDATE_TEMPLATE_DIRECTORY_SCHEMA_SQL" in source
     assert "REMOVE_TEMPLATE_KNOWLEDGE_BASE_SCHEMA_SQL" in source
     assert "knowledge_bases" in source
+
+
+def test_day26_analysis_tasks_and_reports_migration_creates_template_outputs() -> None:
+    migration = load_migration(
+        "migration_0021",
+        "20260716_0021_create_analysis_tasks_and_reports.py",
+    )
+
+    assert migration.revision == "0021"
+    assert migration.down_revision == "0020"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"analysis_tasks"' in source
+    assert '"template_task_key"' in source
+    assert '"input_scope"' in source
+    assert '"output_schema"' in source
+    assert '"reports"' in source
+    assert '"report_sections"' in source
+    assert '"template_section_key"' in source
+    assert '"source_task_keys"' in source
+    assert '"source_result_ids"' in source
+    assert "fk_analysis_tasks_workspace_id_workspaces" in source
+    assert "fk_reports_workspace_id_workspaces" in source
+    assert "fk_report_sections_report_id_reports" in source
+    assert "ix_analysis_tasks_workspace_id" in source
+    assert "ix_report_sections_workspace_id" in source

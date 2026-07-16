@@ -4,12 +4,14 @@ from typing import cast
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.analysis import AnalysisTask, AnalysisTaskStatus
 from backend.app.models.knowledge_base import (
     KnowledgeBase,
     KnowledgeBaseMember,
     KnowledgeBasePermission,
     KnowledgeBaseVisibility,
 )
+from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.models.workspace import (
     Workspace,
     WorkspaceDirectory,
@@ -145,6 +147,13 @@ async def create_workspace(
             template,
         ):
             session.add(knowledge_base)
+        for analysis_task in instantiate_workspace_analysis_tasks_from_template(
+            workspace,
+            owner_id,
+            template,
+        ):
+            session.add(analysis_task)
+        session.add(instantiate_workspace_report_from_template(workspace, owner_id, template))
 
     await session.commit()
     await session.refresh(workspace)
@@ -246,6 +255,126 @@ def get_template_knowledge_base_visibility(entry: dict[str, object]) -> str:
     if visibility == KnowledgeBaseVisibility.PUBLIC.value:
         return KnowledgeBaseVisibility.PUBLIC.value
     return KnowledgeBaseVisibility.PRIVATE.value
+
+
+def instantiate_workspace_analysis_tasks_from_template(
+    workspace: Workspace,
+    owner_id: uuid.UUID,
+    template: WorkspaceTemplate,
+) -> list[AnalysisTask]:
+    task_entries = get_template_analysis_task_entries(template.analysis_task_schema)
+    analysis_tasks: list[AnalysisTask] = []
+
+    for entry in task_entries:
+        template_task_key = cast(str, entry["key"])
+        analysis_tasks.append(
+            AnalysisTask(
+                workspace_id=workspace.id,
+                template_task_key=template_task_key,
+                name=cast(str, entry["name"]),
+                description=cast(str | None, entry.get("description")),
+                task_type=cast(str, entry["task_type"]),
+                status=AnalysisTaskStatus.PENDING.value,
+                input_scope=get_template_task_input_scope(template, entry),
+                output_schema=get_template_task_output_schema(entry),
+                created_by=owner_id,
+            )
+        )
+
+    return analysis_tasks
+
+
+def get_template_analysis_task_entries(
+    analysis_task_schema: dict[str, object],
+) -> list[dict[str, object]]:
+    tasks = analysis_task_schema.get("tasks", [])
+    if not isinstance(tasks, list):
+        return []
+
+    normalized_tasks: list[dict[str, object]] = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        if not isinstance(task.get("key"), str):
+            continue
+        if not isinstance(task.get("name"), str):
+            continue
+        if not isinstance(task.get("task_type"), str):
+            continue
+        normalized_tasks.append(cast(dict[str, object], task))
+    return normalized_tasks
+
+
+def get_template_task_input_scope(
+    template: WorkspaceTemplate,
+    entry: dict[str, object],
+) -> dict[str, object]:
+    input_scope = entry.get("input_scope")
+    if isinstance(input_scope, dict):
+        return cast(dict[str, object], input_scope)
+    return {
+        "template_id": str(template.id),
+        "template_version": template.version,
+        "template_task_key": cast(str, entry["key"]),
+    }
+
+
+def get_template_task_output_schema(entry: dict[str, object]) -> dict[str, object]:
+    output_schema = entry.get("output_schema")
+    if isinstance(output_schema, dict):
+        return cast(dict[str, object], output_schema)
+    return {}
+
+
+def instantiate_workspace_report_from_template(
+    workspace: Workspace,
+    owner_id: uuid.UUID,
+    template: WorkspaceTemplate,
+) -> Report:
+    report = Report(
+        workspace_id=workspace.id,
+        title=f"{workspace.name} Report",
+        status=ReportStatus.DRAFT.value,
+        created_by=owner_id,
+    )
+    for entry in get_template_report_section_entries(template.report_schema):
+        report.sections.append(
+            ReportSection(
+                workspace_id=workspace.id,
+                template_section_key=cast(str, entry.get("key")),
+                title=cast(str, entry["title"]),
+                body_markdown="",
+                source_task_keys=get_template_report_source_task_keys(entry),
+                source_result_ids=[],
+                sort_order=cast(int, entry.get("sort_order", 0)),
+                status=ReportSectionStatus.DRAFT.value,
+            )
+        )
+    return report
+
+
+def get_template_report_section_entries(
+    report_schema: dict[str, object],
+) -> list[dict[str, object]]:
+    sections = report_schema.get("sections", [])
+    if not isinstance(sections, list):
+        return []
+
+    normalized_sections: list[dict[str, object]] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        if not isinstance(section.get("title"), str):
+            continue
+        normalized_sections.append(cast(dict[str, object], section))
+    return normalized_sections
+
+
+def get_template_report_source_task_keys(entry: dict[str, object]) -> list[str]:
+    source_task_keys = entry.get("source_task_keys", [])
+    if not isinstance(source_task_keys, list):
+        return []
+    return [item for item in source_task_keys if isinstance(item, str)]
 
 
 async def list_workspaces_for_user(
