@@ -225,3 +225,27 @@ def test_day26_analysis_tasks_and_reports_migration_creates_template_outputs() -
     assert "fk_report_sections_report_id_reports" in source
     assert "ix_analysis_tasks_workspace_id" in source
     assert "ix_report_sections_workspace_id" in source
+
+
+def test_day29_analysis_results_migration_creates_workspace_scoped_results() -> None:
+    migration = load_migration(
+        "migration_0022",
+        "20260716_0022_create_analysis_results_table.py",
+    )
+
+    assert migration.revision == "0022"
+    assert migration.down_revision == "0021"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"analysis_results"' in source
+    assert '"workspace_id"' in source
+    assert '"analysis_task_id"' in source
+    assert '"result"' in source
+    assert '"citations"' in source
+    assert '"confidence"' in source
+    assert '"token_usage"' in source
+    assert "fk_analysis_results_workspace_id_workspaces" in source
+    assert "fk_analysis_results_analysis_task_id_analysis_tasks" in source
+    assert "ix_analysis_results_workspace_id" in source
+    assert "ix_analysis_results_analysis_task_id" in source

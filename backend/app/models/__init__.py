@@ -1,4 +1,9 @@
-from backend.app.models.analysis import AnalysisTask, AnalysisTaskStatus
+from backend.app.models.analysis import (
+    AnalysisResult,
+    AnalysisResultStatus,
+    AnalysisTask,
+    AnalysisTaskStatus,
+)
 from backend.app.models.audit import AuditAction, AuditLog, AuditResourceType
 from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.models.document import (
@@ -27,6 +32,8 @@ from backend.app.models.workspace import (
 
 __all__ = [
     "AuditAction",
+    "AnalysisResult",
+    "AnalysisResultStatus",
     "AnalysisTask",
     "AnalysisTaskStatus",
     "AuditLog",
