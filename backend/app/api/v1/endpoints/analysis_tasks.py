@@ -19,6 +19,7 @@ from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.analysis_tasks import (
     create_analysis_result_for_task,
     create_workspace_analysis_task,
+    execute_analysis_task,
     get_analysis_result_for_task,
     get_workspace_analysis_task,
     list_analysis_results_for_task,
@@ -77,6 +78,26 @@ async def read_workspace_analysis_task_endpoint(
     await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
     task = await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
     return success_response(AnalysisTaskRead.model_validate(task))
+
+
+@router.post(
+    "/{analysis_task_id}/run",
+    response_model=APIResponse[AnalysisResultRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_workspace_analysis_task_endpoint(
+    workspace_id: uuid.UUID,
+    analysis_task_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[AnalysisResultRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    task = await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
+    analysis_result = await execute_analysis_task(session, task)
+    return success_response(
+        AnalysisResultRead.model_validate(analysis_result),
+        message="analysis task executed",
+    )
 
 
 @router.get(
@@ -190,4 +211,3 @@ async def get_analysis_result_or_404(
             detail="Analysis result not found",
         )
     return analysis_result
-

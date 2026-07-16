@@ -307,6 +307,68 @@ def test_create_analysis_result_returns_structured_result(
     assert body["data"]["citations"][0]["document"] == "policy.md"
 
 
+def test_run_analysis_task_returns_execution_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+    expected_task = task
+    result = make_result(workspace.id, task.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        return task
+
+    async def fake_execute_analysis_task(
+        session: AsyncSession,
+        task: AnalysisTask,
+    ) -> AnalysisResult:
+        assert task is expected_task
+        return result
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "execute_analysis_task",
+        fake_execute_analysis_task,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/{task.id}/run"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["message"] == "analysis task executed"
+    assert body["data"]["id"] == str(result.id)
+
+
 def test_analysis_task_routes_are_registered_in_openapi() -> None:
     clear_overrides()
     client = TestClient(app)
@@ -315,5 +377,5 @@ def test_analysis_task_routes_are_registered_in_openapi() -> None:
 
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks" in paths
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}" in paths
+    assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/run" in paths
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/results" in paths
-
