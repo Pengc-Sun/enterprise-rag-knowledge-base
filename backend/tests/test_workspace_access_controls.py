@@ -10,6 +10,7 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import workspaces as workspace_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
+from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseMember
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
@@ -119,6 +120,24 @@ def make_template() -> WorkspaceTemplate:
                     "path": "evidence",
                     "description": "Supporting evidence",
                     "parent_key": None,
+                    "sort_order": 20,
+                },
+            ],
+            "knowledge_bases": [
+                {
+                    "key": "policies",
+                    "name": "Policies",
+                    "description": "Policy documents under review.",
+                    "directory_key": "policies",
+                    "visibility": "private",
+                    "sort_order": 10,
+                },
+                {
+                    "key": "evidence",
+                    "name": "Evidence",
+                    "description": "Supporting evidence.",
+                    "directory_key": "evidence",
+                    "visibility": "private",
                     "sort_order": 20,
                 },
             ],
@@ -255,8 +274,21 @@ async def test_create_workspace_instantiates_directories_from_template() -> None
     )
 
     directory_paths = {directory.path for directory in workspace.directories}
+    knowledge_bases = [item for item in session.added if isinstance(item, KnowledgeBase)]
+    knowledge_base_members = [
+        member
+        for knowledge_base in knowledge_bases
+        for member in knowledge_base.members
+        if isinstance(member, KnowledgeBaseMember)
+    ]
+
     assert workspace.template_id == template.id
     assert directory_paths == {"policies", "evidence"}
+    assert {knowledge_base.name for knowledge_base in knowledge_bases} == {"Policies", "Evidence"}
+    assert {knowledge_base.workspace_id for knowledge_base in knowledge_bases} == {workspace.id}
+    assert {knowledge_base.owner_id for knowledge_base in knowledge_bases} == {owner.id}
+    assert {member.user_id for member in knowledge_base_members} == {owner.id}
+    assert {member.permission for member in knowledge_base_members} == {"owner"}
     assert {directory.workspace for directory in workspace.directories} == {workspace}
     assert session.statement is not None
     assert session.committed is True

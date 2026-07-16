@@ -174,3 +174,27 @@ def test_day23_workspace_directory_migration_creates_scoped_directory_table() ->
     assert "fk_workspace_directories_parent_id_workspace_directories" in source
     assert "uq_workspace_directories_workspace_path" in source
     assert "ix_workspace_directories_workspace_id" in source
+
+
+def test_day25_template_default_knowledge_base_migration_updates_directory_schema() -> None:
+    migration = load_migration(
+        "migration_0020",
+        "20260716_0020_update_template_default_knowledge_bases.py",
+    )
+
+    assert migration.revision == "0020"
+    assert migration.down_revision == "0019"
+
+    template = migration.BUILT_IN_WORKSPACE_TEMPLATES[0]
+    knowledge_bases = cast(
+        list[dict[str, object]],
+        template["directory_schema"]["knowledge_bases"],
+    )
+    assert knowledge_bases
+    assert knowledge_bases[0]["directory_key"]
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert "UPDATE_TEMPLATE_DIRECTORY_SCHEMA_SQL" in source
+    assert "REMOVE_TEMPLATE_KNOWLEDGE_BASE_SCHEMA_SQL" in source
+    assert "knowledge_bases" in source

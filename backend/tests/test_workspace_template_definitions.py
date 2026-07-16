@@ -26,13 +26,17 @@ def test_built_in_workspace_templates_have_instantiable_schemas() -> None:
         assert report_schema["version"] == "1.0"
 
         directories = cast(list[dict[str, object]], directory_schema["directories"])
+        knowledge_bases = cast(list[dict[str, object]], directory_schema["knowledge_bases"])
         tasks = cast(list[dict[str, object]], analysis_task_schema["tasks"])
         sections = cast(list[dict[str, object]], report_schema["sections"])
 
         directory_keys = {directory["key"] for directory in directories}
+        knowledge_base_keys = {knowledge_base["key"] for knowledge_base in knowledge_bases}
         task_keys = {task["key"] for task in tasks}
 
         assert len(directory_keys) == len(directories)
+        assert len(knowledge_base_keys) == len(knowledge_bases)
+        assert knowledge_bases
         assert len(task_keys) == len(tasks)
         assert len(sections) >= 3
         assert cast(list[str], report_schema["export_formats"]) == ["markdown", "docx", "pdf"]
@@ -41,6 +45,12 @@ def test_built_in_workspace_templates_have_instantiable_schemas() -> None:
             assert directory["name"]
             assert directory["path"]
             assert isinstance(directory["sort_order"], int)
+
+        for knowledge_base in knowledge_bases:
+            assert knowledge_base["name"]
+            assert knowledge_base["visibility"] == "private"
+            assert knowledge_base["directory_key"] in directory_keys
+            assert isinstance(knowledge_base["sort_order"], int)
 
         for task in tasks:
             output_schema = cast(dict[str, object], task["output_schema"])
@@ -87,4 +97,3 @@ def test_different_built_in_workspace_templates_have_different_task_sets() -> No
         "paper_comparison",
     )
     assert len(set(task_sets.values())) == len(task_sets)
-

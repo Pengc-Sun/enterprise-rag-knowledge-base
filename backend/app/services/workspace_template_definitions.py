@@ -49,6 +49,16 @@ BUILT_IN_WORKSPACE_TEMPLATES: tuple[BuiltInWorkspaceTemplate, ...] = (
                     "sort_order": 30,
                 },
             ],
+            "knowledge_bases": [
+                {
+                    "key": "source_documents",
+                    "name": "Source Documents",
+                    "description": "Default knowledge base for uploaded source documents.",
+                    "directory_key": "source_documents",
+                    "visibility": "private",
+                    "sort_order": 10,
+                },
+            ],
         },
         "analysis_task_schema": {
             "version": "1.0",
@@ -196,6 +206,32 @@ BUILT_IN_WORKSPACE_TEMPLATES: tuple[BuiltInWorkspaceTemplate, ...] = (
                     "description": "Approved policy review reports.",
                     "parent_key": None,
                     "sort_order": 40,
+                },
+            ],
+            "knowledge_bases": [
+                {
+                    "key": "policies",
+                    "name": "Policies",
+                    "description": "Policy documents under review.",
+                    "directory_key": "policies",
+                    "visibility": "private",
+                    "sort_order": 10,
+                },
+                {
+                    "key": "evidence",
+                    "name": "Evidence",
+                    "description": "Supporting controls, audits, and implementation evidence.",
+                    "directory_key": "evidence",
+                    "visibility": "private",
+                    "sort_order": 20,
+                },
+                {
+                    "key": "exceptions",
+                    "name": "Exceptions",
+                    "description": "Known gaps, waivers, and exception records.",
+                    "directory_key": "exceptions",
+                    "visibility": "private",
+                    "sort_order": 30,
                 },
             ],
         },
@@ -354,6 +390,32 @@ BUILT_IN_WORKSPACE_TEMPLATES: tuple[BuiltInWorkspaceTemplate, ...] = (
                     "sort_order": 40,
                 },
             ],
+            "knowledge_bases": [
+                {
+                    "key": "runbooks",
+                    "name": "Runbooks",
+                    "description": "Operational runbooks and troubleshooting procedures.",
+                    "directory_key": "runbooks",
+                    "visibility": "private",
+                    "sort_order": 10,
+                },
+                {
+                    "key": "incidents",
+                    "name": "Incident Procedures",
+                    "description": "Incident response procedures and escalation rules.",
+                    "directory_key": "incidents",
+                    "visibility": "private",
+                    "sort_order": 20,
+                },
+                {
+                    "key": "sla",
+                    "name": "SLA",
+                    "description": "Service levels and priority definitions.",
+                    "directory_key": "sla",
+                    "visibility": "private",
+                    "sort_order": 30,
+                },
+            ],
         },
         "analysis_task_schema": {
             "version": "1.0",
@@ -505,6 +567,24 @@ BUILT_IN_WORKSPACE_TEMPLATES: tuple[BuiltInWorkspaceTemplate, ...] = (
                     "sort_order": 40,
                 },
             ],
+            "knowledge_bases": [
+                {
+                    "key": "papers",
+                    "name": "Papers",
+                    "description": "Primary papers and source material.",
+                    "directory_key": "papers",
+                    "visibility": "private",
+                    "sort_order": 10,
+                },
+                {
+                    "key": "evidence_tables",
+                    "name": "Evidence Tables",
+                    "description": "Structured extracted research evidence.",
+                    "directory_key": "evidence_tables",
+                    "visibility": "private",
+                    "sort_order": 20,
+                },
+            ],
         },
         "analysis_task_schema": {
             "version": "1.0",
@@ -621,4 +701,3 @@ BUILT_IN_WORKSPACE_TEMPLATES: tuple[BuiltInWorkspaceTemplate, ...] = (
         },
     },
 )
-

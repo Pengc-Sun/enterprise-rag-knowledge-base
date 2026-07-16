@@ -4,6 +4,12 @@ from typing import cast
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.knowledge_base import (
+    KnowledgeBase,
+    KnowledgeBaseMember,
+    KnowledgeBasePermission,
+    KnowledgeBaseVisibility,
+)
 from backend.app.models.workspace import (
     Workspace,
     WorkspaceDirectory,
@@ -133,6 +139,12 @@ async def create_workspace(
     )
     if template is not None:
         instantiate_workspace_directories_from_template(workspace, template)
+        for knowledge_base in instantiate_workspace_knowledge_bases_from_template(
+            workspace,
+            owner_id,
+            template,
+        ):
+            session.add(knowledge_base)
 
     await session.commit()
     await session.refresh(workspace)
@@ -181,6 +193,59 @@ def get_template_directory_entries(
             continue
         normalized_directories.append(cast(dict[str, object], directory))
     return normalized_directories
+
+
+def instantiate_workspace_knowledge_bases_from_template(
+    workspace: Workspace,
+    owner_id: uuid.UUID,
+    template: WorkspaceTemplate,
+) -> list[KnowledgeBase]:
+    knowledge_base_entries = get_template_knowledge_base_entries(template.directory_schema)
+    created_knowledge_bases: list[KnowledgeBase] = []
+
+    for entry in knowledge_base_entries:
+        knowledge_base_id = uuid.uuid4()
+        knowledge_base = KnowledgeBase(
+            id=knowledge_base_id,
+            name=cast(str, entry["name"]),
+            description=cast(str | None, entry.get("description")),
+            visibility=get_template_knowledge_base_visibility(entry),
+            owner_id=owner_id,
+            workspace_id=workspace.id,
+        )
+        workspace_knowledge_base_member = KnowledgeBaseMember(
+            knowledge_base_id=knowledge_base_id,
+            user_id=owner_id,
+            permission=KnowledgeBasePermission.OWNER.value,
+        )
+        created_knowledge_bases.append(knowledge_base)
+        workspace_knowledge_base_member.knowledge_base = knowledge_base
+
+    return created_knowledge_bases
+
+
+def get_template_knowledge_base_entries(
+    directory_schema: dict[str, object],
+) -> list[dict[str, object]]:
+    knowledge_bases = directory_schema.get("knowledge_bases", [])
+    if not isinstance(knowledge_bases, list):
+        return []
+
+    normalized_knowledge_bases: list[dict[str, object]] = []
+    for knowledge_base in knowledge_bases:
+        if not isinstance(knowledge_base, dict):
+            continue
+        if not isinstance(knowledge_base.get("name"), str):
+            continue
+        normalized_knowledge_bases.append(cast(dict[str, object], knowledge_base))
+    return normalized_knowledge_bases
+
+
+def get_template_knowledge_base_visibility(entry: dict[str, object]) -> str:
+    visibility = entry.get("visibility", KnowledgeBaseVisibility.PRIVATE.value)
+    if visibility == KnowledgeBaseVisibility.PUBLIC.value:
+        return KnowledgeBaseVisibility.PUBLIC.value
+    return KnowledgeBaseVisibility.PRIVATE.value
 
 
 async def list_workspaces_for_user(
