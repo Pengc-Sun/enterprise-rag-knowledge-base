@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 
 def load_migration(module_name: str, filename: str) -> ModuleType:
@@ -123,3 +124,29 @@ def test_day20_audit_log_migration_creates_table_without_cascading_foreign_keys(
     assert "ix_audit_logs_actor_user_id" in source
     assert "ix_audit_logs_action" in source
     assert "ForeignKeyConstraint" not in source
+
+
+def test_day22_workspace_template_schema_migration_updates_built_in_templates() -> None:
+    migration = load_migration(
+        "migration_0018",
+        "20260716_0018_update_workspace_template_schemas.py",
+    )
+
+    assert migration.revision == "0018"
+    assert migration.down_revision == "0017"
+    assert len(migration.LEGACY_TEMPLATE_SCHEMAS) == 4
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert "BUILT_IN_WORKSPACE_TEMPLATES" in source
+    assert "directory_schema" in source
+    assert "analysis_task_schema" in source
+    assert "report_schema" in source
+
+    template = migration.BUILT_IN_WORKSPACE_TEMPLATES[0]
+    task = cast(list[dict[str, object]], template["analysis_task_schema"]["tasks"])[0]
+    section = cast(list[dict[str, object]], template["report_schema"]["sections"])[0]
+
+    assert "output_schema" in task
+    assert "source_task_keys" in section
+    assert template["report_schema"]["export_formats"] == ["markdown", "docx", "pdf"]
