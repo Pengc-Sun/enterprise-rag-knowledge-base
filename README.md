@@ -406,6 +406,7 @@ v2.0 upgrade progress:
 - Week 1: workspace foundation, workspace/member/template models, migrations, CRUD APIs, role-based member management, built-in template APIs, and backend access-control test coverage.
 - Week 2: v1.0 knowledge-base data migration into workspaces, required workspace IDs on existing data tables, seeded migration validation, Alembic downgrade/upgrade validation, and Docker migrate startup validation.
 - Week 3: workspace isolation across knowledge bases, documents, retrieval, RAG, conversations, messages, cross-workspace negative tests, and workspace/document audit logging.
+- Week 4: template-driven workspace structure, workspace directory APIs, default knowledge-base creation, initial analysis tasks, draft report outlines, and template instantiation test coverage.
 
 ## Development Logs
 
@@ -415,6 +416,7 @@ v2.0 upgrade progress:
 - `docs/development-log/v2-week-1.md`
 - `docs/development-log/v2-week-2.md`
 - `docs/development-log/v2-week-3.md`
+- `docs/development-log/v2-week-4.md`
 
 Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
@@ -544,6 +546,18 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Cross-workspace negative tests cover documents, chunks/retrieval, conversations, and RAG queries.
 - `audit_logs` records key workspace, workspace member, and document write actions.
 - Week 3 close-out verification passed with pytest, Ruff, mypy, Alembic current, Alembic `0017` upgrade/downgrade, and `git diff --check`.
+
+## v2.0 Week 4 Acceptance Status
+
+- Built-in templates now define directories, default knowledge bases, analysis tasks, and report sections.
+- Workspace directory persistence is implemented with `workspace_directories`, parent-child links, per-workspace path uniqueness, service functions, and workspace-scoped APIs.
+- Creating a workspace with an active `template_id` instantiates template directories automatically.
+- Template creation also creates default workspace knowledge bases and owner permissions.
+- Template creation creates initial `analysis_tasks` from `analysis_task_schema.tasks`.
+- Template creation creates one draft report and report sections from `report_schema.sections`.
+- Different built-in templates create different analysis task definitions.
+- Backend tests cover template definitions, directory APIs, template-created directories, default knowledge bases, analysis tasks, report outlines, and nested directory parent links.
+- Week 4 close-out verification passed with pytest, Ruff, mypy, Alembic current, Alembic migration round trips through `0021`, and `git diff --check`.
 
 ## CI
 

@@ -168,7 +168,15 @@ Workspace endpoints are part of the v2.0 upgrade branch and require authenticati
 GET /api/v1/workspace-templates
 ```
 
-Returns active built-in template definitions. Week 1 seeds these categories: `general`, `policy_review`, `it_support`, and `research_review`. Each template includes directory, analysis task, and report schemas for later v2.0 instantiation work.
+Returns active built-in template definitions. The built-in categories are `general`,
+`policy_review`, `it_support`, and `research_review`.
+
+Each template includes:
+
+- `directory_schema.directories`: logical workspace directories to create.
+- `directory_schema.knowledge_bases`: default knowledge bases to create inside the workspace.
+- `analysis_task_schema.tasks`: initial analysis task definitions with structured output schemas.
+- `report_schema.sections`: initial report outline sections and their source task keys.
 
 ### Read workspace template
 
@@ -199,7 +207,13 @@ Behavior:
 
 - Creates a workspace owned by the current user.
 - Automatically creates an `owner` membership for the creator.
-- Accepts optional `template_id`; Week 1 stores the selected template, while full template instantiation is scheduled for a later v2.0 week.
+- Accepts optional `template_id`.
+- If `template_id` is provided, the template must be active or the API returns `404`.
+- Template creation currently instantiates:
+  - workspace directories from `directory_schema.directories`
+  - default knowledge bases from `directory_schema.knowledge_bases`
+  - initial analysis tasks from `analysis_task_schema.tasks`
+  - one draft report and report sections from `report_schema.sections`
 - Requires a lowercase hyphenated slug.
 
 ### List workspaces
@@ -244,6 +258,61 @@ DELETE /api/v1/workspaces/{workspace_id}
 ```
 
 Requires `owner` role. Returns `204 No Content`.
+
+### List workspace directories
+
+```text
+GET /api/v1/workspaces/{workspace_id}/directories
+```
+
+Requires workspace membership. Lists logical directories created manually or from the selected
+workspace template.
+
+### Create workspace directory
+
+```text
+POST /api/v1/workspaces/{workspace_id}/directories
+```
+
+Requires `owner` or `admin` role. Request body:
+
+```json
+{
+  "name": "Policies",
+  "path": "policies",
+  "description": "Policy documents",
+  "parent_id": null,
+  "sort_order": 10
+}
+```
+
+`path` must be lowercase and may contain hyphenated path segments such as
+`policies/reviewed`.
+
+### Read workspace directory
+
+```text
+GET /api/v1/workspaces/{workspace_id}/directories/{directory_id}
+```
+
+Requires workspace membership. The directory must belong to the supplied workspace.
+
+### Update workspace directory
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}/directories/{directory_id}
+```
+
+Requires `owner` or `admin` role. Supports updating `name`, `path`, `description`,
+`parent_id`, and `sort_order`. A directory cannot be its own parent.
+
+### Delete workspace directory
+
+```text
+DELETE /api/v1/workspaces/{workspace_id}/directories/{directory_id}
+```
+
+Requires `owner` or `admin` role. Returns `204 No Content` on success.
 
 ### List workspace members
 
