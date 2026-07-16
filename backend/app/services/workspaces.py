@@ -6,10 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.workspace import (
     Workspace,
+    WorkspaceDirectory,
     WorkspaceMember,
     WorkspaceMemberRole,
+    WorkspaceTemplate,
 )
 from backend.app.schemas.workspace import WorkspaceCreate, WorkspaceUpdate
+from backend.app.services.workspace_templates import get_active_workspace_template
 
 READ_ROLES = frozenset(
     {
@@ -50,6 +53,10 @@ class WorkspaceMemberRoleError(ValueError):
 
 class WorkspaceOwnerMemberError(ValueError):
     message = "Workspace owner membership cannot be modified through member endpoints"
+
+
+class WorkspaceTemplateNotFoundError(ValueError):
+    message = "Workspace template not found"
 
 
 def default_workspace_slug_for_user(user_id: uuid.UUID) -> str:
@@ -102,6 +109,12 @@ async def create_workspace(
     owner_id: uuid.UUID,
     workspace_create: WorkspaceCreate,
 ) -> Workspace:
+    template: WorkspaceTemplate | None = None
+    if workspace_create.template_id is not None:
+        template = await get_active_workspace_template(session, workspace_create.template_id)
+        if template is None:
+            raise WorkspaceTemplateNotFoundError
+
     workspace = Workspace(
         name=workspace_create.name,
         slug=workspace_create.slug,
@@ -118,9 +131,56 @@ async def create_workspace(
             role=WorkspaceMemberRole.OWNER.value,
         )
     )
+    if template is not None:
+        instantiate_workspace_directories_from_template(workspace, template)
+
     await session.commit()
     await session.refresh(workspace)
     return workspace
+
+
+def instantiate_workspace_directories_from_template(
+    workspace: Workspace,
+    template: WorkspaceTemplate,
+) -> list[WorkspaceDirectory]:
+    directories = get_template_directory_entries(template.directory_schema)
+    directory_by_key: dict[str, WorkspaceDirectory] = {}
+    created_directories: list[WorkspaceDirectory] = []
+
+    for entry in directories:
+        key = cast(str, entry.get("key") or entry["path"])
+        parent_key = cast(str | None, entry.get("parent_key"))
+        directory = WorkspaceDirectory(
+            workspace=workspace,
+            parent=directory_by_key.get(parent_key) if parent_key is not None else None,
+            name=cast(str, entry["name"]),
+            path=cast(str, entry["path"]),
+            description=cast(str | None, entry.get("description")),
+            sort_order=cast(int, entry.get("sort_order", 0)),
+        )
+        directory_by_key[key] = directory
+        created_directories.append(directory)
+
+    return created_directories
+
+
+def get_template_directory_entries(
+    directory_schema: dict[str, object],
+) -> list[dict[str, object]]:
+    directories = directory_schema.get("directories", [])
+    if not isinstance(directories, list):
+        return []
+
+    normalized_directories: list[dict[str, object]] = []
+    for directory in directories:
+        if not isinstance(directory, dict):
+            continue
+        if not isinstance(directory.get("name"), str):
+            continue
+        if not isinstance(directory.get("path"), str):
+            continue
+        normalized_directories.append(cast(dict[str, object], directory))
+    return normalized_directories
 
 
 async def list_workspaces_for_user(

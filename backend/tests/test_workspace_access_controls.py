@@ -17,12 +17,15 @@ from backend.app.models.workspace import (
     WorkspaceMember,
     WorkspaceMemberRole,
     WorkspaceStatus,
+    WorkspaceTemplate,
+    WorkspaceTemplateCategory,
 )
 from backend.app.schemas.workspace import WorkspaceCreate
 from backend.app.services.workspaces import (
     WRITE_ROLES,
     WorkspaceMemberRoleError,
     WorkspaceOwnerMemberError,
+    WorkspaceTemplateNotFoundError,
     create_workspace,
     get_workspace_for_user,
     get_workspace_member,
@@ -90,15 +93,59 @@ def make_directory(workspace_id: uuid.UUID) -> WorkspaceDirectory:
     )
 
 
+def make_template() -> WorkspaceTemplate:
+    now = datetime.now(UTC)
+    return WorkspaceTemplate(
+        id=uuid.uuid4(),
+        name="Policy Review Workspace",
+        description="Policy review",
+        category=WorkspaceTemplateCategory.POLICY_REVIEW.value,
+        version="1.0",
+        is_active=True,
+        directory_schema={
+            "version": "1.0",
+            "directories": [
+                {
+                    "key": "policies",
+                    "name": "Policies",
+                    "path": "policies",
+                    "description": "Policy documents",
+                    "parent_key": None,
+                    "sort_order": 10,
+                },
+                {
+                    "key": "evidence",
+                    "name": "Evidence",
+                    "path": "evidence",
+                    "description": "Supporting evidence",
+                    "parent_key": None,
+                    "sort_order": 20,
+                },
+            ],
+        },
+        analysis_task_schema={"tasks": []},
+        report_schema={"sections": []},
+        created_at=now,
+        updated_at=now,
+    )
+
+
 class FakeCreateWorkspaceSession:
-    def __init__(self) -> None:
+    def __init__(self, result: object | None = None) -> None:
         self.added: list[object] = []
         self.flushed = False
         self.committed = False
         self.refreshed: object | None = None
+        self.result = result
+        self.statement: object | None = None
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
+
+    async def execute(self, statement: object) -> object:
+        self.statement = statement
+        assert self.result is not None
+        return self.result
 
     async def flush(self) -> None:
         self.flushed = True
@@ -188,6 +235,51 @@ async def test_create_workspace_creates_owner_membership() -> None:
     assert session.flushed is True
     assert session.committed is True
     assert session.refreshed is workspace
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_instantiates_directories_from_template() -> None:
+    owner = make_user()
+    template = make_template()
+    session = FakeCreateWorkspaceSession(FakeResult(scalar=template))
+
+    workspace = await create_workspace(
+        session,  # type: ignore[arg-type]
+        owner.id,
+        WorkspaceCreate(
+            name="Policy Review",
+            slug="policy-review",
+            description="Review policies",
+            template_id=template.id,
+        ),
+    )
+
+    directory_paths = {directory.path for directory in workspace.directories}
+    assert workspace.template_id == template.id
+    assert directory_paths == {"policies", "evidence"}
+    assert {directory.workspace for directory in workspace.directories} == {workspace}
+    assert session.statement is not None
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_rejects_missing_template() -> None:
+    owner = make_user()
+    session = FakeCreateWorkspaceSession(FakeResult(scalar=None))
+
+    with pytest.raises(WorkspaceTemplateNotFoundError):
+        await create_workspace(
+            session,  # type: ignore[arg-type]
+            owner.id,
+            WorkspaceCreate(
+                name="Policy Review",
+                slug="policy-review",
+                description="Review policies",
+                template_id=uuid.uuid4(),
+            ),
+        )
+
+    assert session.committed is False
 
 
 @pytest.mark.asyncio
@@ -400,6 +492,44 @@ def test_remove_workspace_member_rejects_workspace_owner_at_api_boundary(
 
     assert response.status_code == 400
     assert "owner membership" in response.json()["message"]
+
+
+def test_create_workspace_returns_404_for_missing_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = make_user("owner@example.com")
+
+    async def fake_create_workspace(
+        session: AsyncSession,
+        owner_id: uuid.UUID,
+        workspace_create: WorkspaceCreate,
+    ) -> Workspace:
+        assert owner_id == owner.id
+        raise WorkspaceTemplateNotFoundError
+
+    async def fake_create_audit_log(*args: object, **kwargs: object) -> object:
+        pytest.fail("audit log must not be written when workspace creation fails")
+
+    monkeypatch.setattr(workspace_endpoints, "create_workspace", fake_create_workspace)
+    monkeypatch.setattr(workspace_endpoints, "create_audit_log", fake_create_audit_log)
+    set_overrides(owner)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/workspaces",
+            json={
+                "name": "Policy Review",
+                "slug": "policy-review",
+                "description": "Review policies",
+                "template_id": str(uuid.uuid4()),
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace template not found"
 
 
 def test_list_workspace_directories_returns_404_for_non_member(

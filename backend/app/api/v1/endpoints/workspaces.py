@@ -39,6 +39,7 @@ from backend.app.services.workspaces import (
     WRITE_ROLES,
     WorkspaceMemberRoleError,
     WorkspaceOwnerMemberError,
+    WorkspaceTemplateNotFoundError,
     add_workspace_member,
     create_workspace,
     delete_workspace,
@@ -60,7 +61,11 @@ async def create_workspace_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[WorkspaceRead]:
-    workspace = await create_workspace(session, current_user.id, workspace_create)
+    try:
+        workspace = await create_workspace(session, current_user.id, workspace_create)
+    except WorkspaceTemplateNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+
     await create_audit_log(
         session,
         workspace_id=workspace.id,
