@@ -334,8 +334,12 @@ def test_run_analysis_task_returns_execution_result(
     async def fake_execute_analysis_task(
         session: AsyncSession,
         task: AnalysisTask,
+        **kwargs: object,
     ) -> AnalysisResult:
         assert task is expected_task
+        assert kwargs["llm_provider"] is not None
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["max_tokens"] == 1024
         return result
 
     monkeypatch.setattr(

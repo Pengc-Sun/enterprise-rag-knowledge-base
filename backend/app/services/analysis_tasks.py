@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from sqlalchemy import Select, select
@@ -12,10 +13,26 @@ from backend.app.models.analysis import (
 )
 from backend.app.models.document import DocumentChunk
 from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
+from backend.app.services.llms import (
+    DeterministicLLMProvider,
+    LLMMessage,
+    LLMProvider,
+    LLMProviderResponseError,
+    LLMResponse,
+)
 
 DEFAULT_ANALYSIS_CONTEXT_LIMIT = 8
 LOCAL_ANALYSIS_PROVIDER = "local"
 LOCAL_ANALYSIS_MODEL = "workspace-scoped-retrieval"
+STRUCTURED_ANALYSIS_SYSTEM_PROMPT = """\
+You are an enterprise document analysis engine.
+Return only valid JSON. Do not include Markdown fences, prose, or comments.
+The JSON object must include:
+- summary: string
+- findings: array of structured finding objects
+- citations: array of citation objects referencing provided chunk_id values
+- confidence: number between 0 and 1, or null
+"""
 
 
 async def list_workspace_analysis_tasks(
@@ -125,9 +142,46 @@ async def create_analysis_result_for_task(
 async def execute_analysis_task(
     session: AsyncSession,
     task: AnalysisTask,
+    *,
+    llm_provider: LLMProvider | None = None,
+    temperature: float | None = 0.0,
+    max_tokens: int | None = 1024,
 ) -> AnalysisResult:
     task.status = AnalysisTaskStatus.RUNNING.value
     chunks = await retrieve_analysis_context_chunks(session, task)
+    if llm_provider is None or isinstance(llm_provider, DeterministicLLMProvider):
+        return await create_local_analysis_result(session, task, chunks)
+
+    response = await llm_provider.generate(
+        build_structured_analysis_messages(task, chunks),
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    structured_result = parse_structured_analysis_response(response.content)
+    analysis_result = AnalysisResult(
+        workspace_id=task.workspace_id,
+        analysis_task_id=task.id,
+        status=AnalysisResultStatus.AI_GENERATED.value,
+        result=structured_result,
+        citations=extract_structured_analysis_citations(structured_result),
+        confidence=extract_structured_analysis_confidence(structured_result),
+        model=response.model,
+        provider=response.provider.value,
+        token_usage=llm_usage_to_dict(response),
+    )
+    task.status = AnalysisTaskStatus.COMPLETED.value
+    session.add(analysis_result)
+    await session.commit()
+    await session.refresh(task)
+    await session.refresh(analysis_result)
+    return analysis_result
+
+
+async def create_local_analysis_result(
+    session: AsyncSession,
+    task: AnalysisTask,
+    chunks: list[DocumentChunk],
+) -> AnalysisResult:
     analysis_result = AnalysisResult(
         workspace_id=task.workspace_id,
         analysis_task_id=task.id,
@@ -145,6 +199,97 @@ async def execute_analysis_task(
     await session.refresh(task)
     await session.refresh(analysis_result)
     return analysis_result
+
+
+def build_structured_analysis_messages(
+    task: AnalysisTask,
+    chunks: list[DocumentChunk],
+) -> list[LLMMessage]:
+    return [
+        LLMMessage(role="system", content=STRUCTURED_ANALYSIS_SYSTEM_PROMPT),
+        LLMMessage(role="user", content=build_structured_analysis_user_prompt(task, chunks)),
+    ]
+
+
+def build_structured_analysis_user_prompt(
+    task: AnalysisTask,
+    chunks: list[DocumentChunk],
+) -> str:
+    context_blocks = [build_analysis_context_block(chunk) for chunk in chunks]
+    context = (
+        "\n\n".join(context_blocks)
+        if context_blocks
+        else "No workspace context chunks found."
+    )
+    output_schema = json.dumps(task.output_schema, ensure_ascii=False, sort_keys=True)
+    return "\n".join(
+        [
+            f"Task ID: {task.id}",
+            f"Task name: {task.name}",
+            f"Task type: {task.task_type}",
+            f"Template task key: {task.template_task_key or ''}",
+            f"Task description: {task.description or ''}",
+            f"Expected output schema: {output_schema}",
+            "",
+            "Use only the workspace context below.",
+            "Every citation must reference one of the provided chunk_id values.",
+            "",
+            "Workspace context:",
+            context,
+        ]
+    )
+
+
+def build_analysis_context_block(chunk: DocumentChunk) -> str:
+    document = getattr(chunk, "document", None)
+    return "\n".join(
+        [
+            f"chunk_id: {chunk.id}",
+            f"document_id: {chunk.document_id}",
+            f"document_name: {getattr(document, 'filename', None) or ''}",
+            f"page_number: {chunk.page_number}",
+            f"section_title: {chunk.section_title or ''}",
+            "content:",
+            chunk.content,
+        ]
+    )
+
+
+def parse_structured_analysis_response(content: str) -> dict[str, object]:
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise LLMProviderResponseError from exc
+
+    if not isinstance(parsed, dict):
+        raise LLMProviderResponseError
+    return parsed
+
+
+def extract_structured_analysis_citations(
+    structured_result: dict[str, object],
+) -> list[dict[str, object]]:
+    citations = structured_result.get("citations")
+    if not isinstance(citations, list):
+        return []
+    return [citation for citation in citations if isinstance(citation, dict)]
+
+
+def extract_structured_analysis_confidence(structured_result: dict[str, object]) -> float | None:
+    confidence = structured_result.get("confidence")
+    if isinstance(confidence, int | float):
+        return max(0.0, min(float(confidence), 1.0))
+    return None
+
+
+def llm_usage_to_dict(response: LLMResponse) -> dict[str, object]:
+    if response.usage is None:
+        return {}
+    return {
+        "prompt_tokens": response.usage.prompt_tokens,
+        "completion_tokens": response.usage.completion_tokens,
+        "total_tokens": response.usage.total_tokens,
+    }
 
 
 async def retrieve_analysis_context_chunks(

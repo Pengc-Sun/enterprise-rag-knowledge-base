@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -13,6 +14,7 @@ from backend.app.models.document import Document, DocumentChunk
 from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
 from backend.app.services.analysis_tasks import (
     build_analysis_context_statement,
+    build_structured_analysis_messages,
     create_analysis_result_for_task,
     create_workspace_analysis_task,
     execute_analysis_task,
@@ -20,6 +22,15 @@ from backend.app.services.analysis_tasks import (
     get_workspace_analysis_task,
     list_analysis_results_for_task,
     list_workspace_analysis_tasks,
+    parse_structured_analysis_response,
+)
+from backend.app.services.llms import (
+    LLMMessage,
+    LLMProvider,
+    LLMProviderName,
+    LLMProviderResponseError,
+    LLMResponse,
+    LLMUsage,
 )
 
 
@@ -65,6 +76,31 @@ class FakeSession:
 
     async def refresh(self, instance: object) -> None:
         self.refreshed = instance
+
+
+class FakeStructuredLLMProvider(LLMProvider):
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.messages: list[LLMMessage] = []
+        self.temperature: float | None = None
+        self.max_tokens: int | None = None
+
+    async def generate(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResponse:
+        self.messages = messages
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        return LLMResponse(
+            content=self.content,
+            model="structured-test-model",
+            provider=LLMProviderName.OPENAI,
+            usage=LLMUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        )
 
 
 def make_task(workspace_id: uuid.UUID | None = None) -> AnalysisTask:
@@ -281,6 +317,37 @@ def test_build_analysis_context_statement_filters_by_workspace_and_scope() -> No
     assert "LIMIT 3" in sql
 
 
+def test_build_structured_analysis_messages_requires_json_and_includes_context() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    task.output_schema = {"type": "object", "required": ["summary", "findings"]}
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+
+    messages = build_structured_analysis_messages(task, [chunk])
+
+    assert [message.role for message in messages] == ["system", "user"]
+    assert "Return only valid JSON" in messages[0].content
+    assert "Markdown fences" in messages[0].content
+    assert str(chunk.id) in messages[1].content
+    assert "Expected output schema" in messages[1].content
+    assert '"required": ["summary", "findings"]' in messages[1].content
+
+
+def test_parse_structured_analysis_response_returns_json_object() -> None:
+    payload = {"summary": "ok", "findings": [], "citations": [], "confidence": 0.7}
+
+    parsed = parse_structured_analysis_response(json.dumps(payload))
+
+    assert parsed == payload
+
+
+@pytest.mark.parametrize("content", ["not-json", "[1, 2, 3]"])
+def test_parse_structured_analysis_response_rejects_malformed_output(content: str) -> None:
+    with pytest.raises(LLMProviderResponseError):
+        parse_structured_analysis_response(content)
+
+
 @pytest.mark.asyncio
 async def test_execute_analysis_task_retrieves_workspace_chunks_and_creates_result() -> None:
     workspace_id = uuid.uuid4()
@@ -304,3 +371,43 @@ async def test_execute_analysis_task_retrieves_workspace_chunks_and_creates_resu
     assert session.added is result
     assert session.committed is True
     assert session.refreshed is result
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_persists_structured_llm_json_result() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    response_payload = {
+        "summary": "Hotel receipts are required.",
+        "findings": [{"title": "Receipt required", "citations": [{"chunk_id": str(chunk.id)}]}],
+        "citations": [{"chunk_id": str(chunk.id), "page_number": 1}],
+        "confidence": 0.82,
+    }
+    llm_provider = FakeStructuredLLMProvider(json.dumps(response_payload))
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    result = await execute_analysis_task(
+        session,  # type: ignore[arg-type]
+        task,
+        llm_provider=llm_provider,
+        temperature=0.0,
+        max_tokens=512,
+    )
+
+    assert task.status == AnalysisTaskStatus.COMPLETED.value
+    assert result.result == response_payload
+    assert result.citations == response_payload["citations"]
+    assert result.confidence == 0.82
+    assert result.provider == "openai"
+    assert result.model == "structured-test-model"
+    assert result.token_usage == {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+    }
+    assert llm_provider.temperature == 0.0
+    assert llm_provider.max_tokens == 512
+    assert "Return only valid JSON" in llm_provider.messages[0].content
+    assert session.added is result

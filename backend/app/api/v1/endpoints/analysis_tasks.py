@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
+from backend.app.api.errors import provider_exception_to_http
+from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
 from backend.app.models.analysis import AnalysisResult, AnalysisTask
 from backend.app.models.user import User
@@ -25,6 +27,7 @@ from backend.app.services.analysis_tasks import (
     list_analysis_results_for_task,
     list_workspace_analysis_tasks,
 )
+from backend.app.services.llms import LLMProviderError, create_llm_provider
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES, get_workspace_for_user
 
 router = APIRouter(
@@ -93,7 +96,17 @@ async def run_workspace_analysis_task_endpoint(
 ) -> APIResponse[AnalysisResultRead]:
     await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
     task = await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
-    analysis_result = await execute_analysis_task(session, task)
+    settings = get_settings()
+    try:
+        analysis_result = await execute_analysis_task(
+            session,
+            task,
+            llm_provider=create_llm_provider(settings),
+            temperature=0.0,
+            max_tokens=settings.llm_max_tokens,
+        )
+    except LLMProviderError as exc:
+        raise provider_exception_to_http(exc, "Analysis task execution failed") from exc
     return success_response(
         AnalysisResultRead.model_validate(analysis_result),
         message="analysis task executed",
