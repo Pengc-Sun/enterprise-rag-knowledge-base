@@ -15,6 +15,7 @@ from backend.app.api.v1.endpoints import knowledge_bases as knowledge_base_endpo
 from backend.app.api.v1.endpoints import rag as rag_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.document import Document, DocumentChunk, DocumentStatus
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
@@ -124,6 +125,7 @@ def test_register_login_create_upload_query_and_read_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state: dict[str, object] = {}
+    audit_actions: list[AuditAction] = []
 
     async def fake_create_user(session: AsyncSession, user_create: UserCreate) -> User:
         user = make_user(str(user_create.email), user_create.username)
@@ -271,6 +273,23 @@ def test_register_login_create_upload_query_and_read_sources(
             ),
         )
 
+    async def fake_create_audit_log(
+        session: AsyncSession,
+        *,
+        workspace_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        action: AuditAction,
+        resource_type: AuditResourceType,
+        resource_id: uuid.UUID | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        workspace = cast(Workspace, state["workspace"])
+        user = cast(User, state["user"])
+        assert workspace_id == workspace.id
+        assert actor_user_id == user.id
+        assert resource_type == AuditResourceType.DOCUMENT
+        audit_actions.append(action)
+
     monkeypatch.setattr(auth_endpoints, "create_user", fake_create_user)
     monkeypatch.setattr(auth_endpoints, "authenticate_user", fake_authenticate_user)
     monkeypatch.setattr(auth_dependencies, "get_user_by_id", fake_get_user_by_id)
@@ -304,6 +323,7 @@ def test_register_login_create_upload_query_and_read_sources(
         "process_document_for_retrieval",
         fake_process_document_for_retrieval,
     )
+    monkeypatch.setattr(document_endpoints, "create_audit_log", fake_create_audit_log)
     monkeypatch.setattr(document_endpoints, "get_settings", make_settings)
     monkeypatch.setattr(rag_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
     monkeypatch.setattr(
@@ -371,6 +391,7 @@ def test_register_login_create_upload_query_and_read_sources(
         assert upload_body["data"]["filename"] == "travel_policy.txt"
         assert upload_body["data"]["status"] == "completed"
         assert upload_body["data"]["chunk_count"] == 1
+        assert audit_actions == [AuditAction.DOCUMENT_UPLOADED]
 
         query_response = client.post(
             f"/api/v1/knowledge-bases/{knowledge_base_id}/query?workspace_id={workspace.id}",

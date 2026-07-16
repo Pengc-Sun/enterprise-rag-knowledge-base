@@ -7,12 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.document import Document
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.document import DocumentRead
 from backend.app.schemas.response import APIResponse, success_response
+from backend.app.services.audit_logs import create_audit_log
 from backend.app.services.document_embeddings import embed_document_chunks
 from backend.app.services.document_parsers import DocumentParsingError
 from backend.app.services.documents import (
@@ -195,11 +197,39 @@ async def upload_document_to_workspace(
             settings,
         )
     except DocumentParsingError:
+        await create_audit_log(
+            session,
+            workspace_id=workspace_id,
+            actor_user_id=current_user.id,
+            action=AuditAction.DOCUMENT_UPLOADED,
+            resource_type=AuditResourceType.DOCUMENT,
+            resource_id=document.id,
+            metadata={
+                "knowledge_base_id": str(knowledge_base.id),
+                "filename": document.filename,
+                "status": document.status,
+                "processing_failed": True,
+            },
+        )
         return success_response(
             serialize_document(document),
             message="document uploaded but processing failed",
         )
 
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.DOCUMENT_UPLOADED,
+        resource_type=AuditResourceType.DOCUMENT,
+        resource_id=processed_document.id,
+        metadata={
+            "knowledge_base_id": str(knowledge_base.id),
+            "filename": processed_document.filename,
+            "status": processed_document.status,
+            "chunk_count": chunk_count,
+        },
+    )
     return success_response(
         serialize_document(processed_document, chunk_count),
         message="document uploaded and processed",
@@ -324,6 +354,20 @@ async def reprocess_document_in_workspace(
     except DocumentParsingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.DOCUMENT_REPROCESSED,
+        resource_type=AuditResourceType.DOCUMENT,
+        resource_id=processed_document.id,
+        metadata={
+            "knowledge_base_id": str(knowledge_base_id),
+            "filename": processed_document.filename,
+            "status": processed_document.status,
+            "chunk_count": chunk_count,
+        },
+    )
     return success_response(
         serialize_document(processed_document, chunk_count),
         message="document reprocessed",
@@ -379,7 +423,21 @@ async def delete_document_in_workspace(
         WRITE_ROLES,
     )
     document = await get_document_or_404(session, workspace_id, knowledge_base_id, document_id)
+    audit_metadata: dict[str, object] = {
+        "knowledge_base_id": str(knowledge_base_id),
+        "filename": document.filename,
+        "status": document.status,
+    }
     await delete_document(session, document)
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.DOCUMENT_DELETED,
+        resource_type=AuditResourceType.DOCUMENT,
+        resource_id=document.id,
+        metadata=audit_metadata,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

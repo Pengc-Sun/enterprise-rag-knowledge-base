@@ -51,6 +51,7 @@ Endpoint behavior:
 - Knowledge base delete requires owner.
 - Document listing requires read access.
 - Document upload, reprocess, and delete require write access.
+- Workspace creation, workspace updates, member changes, and document write actions create database audit log records.
 - RAG query, retrieval debug, conversations, and chat require read access.
 
 For scoped resources, unauthorized access generally returns `404 Knowledge base not found` or resource-specific `404`, which avoids confirming whether private resources exist.
@@ -189,7 +190,7 @@ The following controls are not yet fully implemented:
 - Password reset and email verification.
 - Virus or malware scanning for uploads.
 - Dedicated background worker isolation for parsing and embedding.
-- Audit log UI or immutable audit trail.
+- Audit log UI and immutable audit log storage.
 - Centralized secret manager integration.
 - Automated dependency vulnerability scanning.
 

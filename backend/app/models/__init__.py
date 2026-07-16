@@ -1,3 +1,4 @@
+from backend.app.models.audit import AuditAction, AuditLog, AuditResourceType
 from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.models.document import (
     ChunkEmbeddingStatus,
@@ -22,6 +23,9 @@ from backend.app.models.workspace import (
 )
 
 __all__ = [
+    "AuditAction",
+    "AuditLog",
+    "AuditResourceType",
     "MessageRole",
     "Message",
     "Conversation",

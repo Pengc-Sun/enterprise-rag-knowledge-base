@@ -99,3 +99,27 @@ def test_day11_require_workspace_ids_adds_constraints_and_indexes() -> None:
         migration.WORKSPACE_FOREIGN_KEYS["conversations"]
         == "fk_conversations_workspace_id_workspaces"
     )
+
+
+def test_day20_audit_log_migration_creates_table_without_cascading_foreign_keys() -> None:
+    migration = load_migration(
+        "migration_0017",
+        "20260716_0017_create_audit_logs_table.py",
+    )
+
+    assert migration.revision == "0017"
+    assert migration.down_revision == "0016"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"audit_logs"' in source
+    assert '"workspace_id"' in source
+    assert '"actor_user_id"' in source
+    assert '"action"' in source
+    assert '"resource_type"' in source
+    assert '"resource_id"' in source
+    assert '"metadata"' in source
+    assert "ix_audit_logs_workspace_id" in source
+    assert "ix_audit_logs_actor_user_id" in source
+    assert "ix_audit_logs_action" in source
+    assert "ForeignKeyConstraint" not in source

@@ -87,6 +87,7 @@ Main entities:
 - `DocumentChunk`: parsed content chunk with page, section, token count, JSON metadata, full-text vector, and pgvector embedding.
 - `Conversation`: user conversation scoped to a knowledge base.
 - `Message`: persisted user, assistant, or system message with source citations and optional token usage.
+- `AuditLog`: workspace-scoped event record for key workspace, member, and document actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:
 
@@ -94,6 +95,7 @@ Important relationships:
 - Deleting a workspace cascades workspace memberships. Later v2.0 migration work will attach knowledge bases, documents, chunks, and conversations to workspaces.
 - Deleting a knowledge base cascades members, documents, chunks, conversations, and messages.
 - Deleting a document cascades its chunks and removes the stored upload file.
+- Audit logs preserve workspace, actor, and resource IDs independently of resource deletion.
 
 ## Request Lifecycle
 

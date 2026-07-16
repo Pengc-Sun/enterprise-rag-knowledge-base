@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.db.session import get_db_session
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.user import User
 from backend.app.models.workspace import Workspace, WorkspaceMember
 from backend.app.schemas.response import APIResponse, success_response
@@ -17,6 +18,7 @@ from backend.app.schemas.workspace import (
     WorkspaceRead,
     WorkspaceUpdate,
 )
+from backend.app.services.audit_logs import create_audit_log
 from backend.app.services.users import get_user_by_id
 from backend.app.services.workspaces import (
     MEMBER_MANAGEMENT_ROLES,
@@ -47,6 +49,15 @@ async def create_workspace_endpoint(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[WorkspaceRead]:
     workspace = await create_workspace(session, current_user.id, workspace_create)
+    await create_audit_log(
+        session,
+        workspace_id=workspace.id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_CREATED,
+        resource_type=AuditResourceType.WORKSPACE,
+        resource_id=workspace.id,
+        metadata={"name": workspace.name, "slug": workspace.slug},
+    )
     return success_response(
         WorkspaceRead.model_validate(workspace),
         message="workspace created",
@@ -81,6 +92,15 @@ async def update_workspace_endpoint(
 ) -> APIResponse[WorkspaceRead]:
     workspace = await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
     updated_workspace = await update_workspace(session, workspace, workspace_update)
+    await create_audit_log(
+        session,
+        workspace_id=updated_workspace.id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_UPDATED,
+        resource_type=AuditResourceType.WORKSPACE,
+        resource_id=updated_workspace.id,
+        metadata=workspace_update.model_dump(mode="json", exclude_unset=True),
+    )
     return success_response(
         WorkspaceRead.model_validate(updated_workspace),
         message="workspace updated",
@@ -94,7 +114,17 @@ async def delete_workspace_endpoint(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
     workspace = await get_workspace_or_404(session, workspace_id, current_user.id, OWNER_ROLES)
+    audit_metadata: dict[str, object] = {"name": workspace.name, "slug": workspace.slug}
     await delete_workspace(session, workspace)
+    await create_audit_log(
+        session,
+        workspace_id=workspace.id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_DELETED,
+        resource_type=AuditResourceType.WORKSPACE,
+        resource_id=workspace.id,
+        metadata=audit_metadata,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -133,6 +163,15 @@ async def add_workspace_member_endpoint(
     except WorkspaceMemberRoleError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_MEMBER_ADDED,
+        resource_type=AuditResourceType.WORKSPACE_MEMBER,
+        resource_id=member.id,
+        metadata={"user_id": str(member.user_id), "role": member.role},
+    )
     return success_response(
         WorkspaceMemberRead.model_validate(member),
         message="workspace member added",
@@ -167,6 +206,15 @@ async def update_workspace_member_endpoint(
     except (WorkspaceMemberRoleError, WorkspaceOwnerMemberError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_MEMBER_UPDATED,
+        resource_type=AuditResourceType.WORKSPACE_MEMBER,
+        resource_id=updated_member.id,
+        metadata={"user_id": str(updated_member.user_id), "role": updated_member.role},
+    )
     return success_response(
         WorkspaceMemberRead.model_validate(updated_member),
         message="workspace member updated",
@@ -192,6 +240,15 @@ async def remove_workspace_member_endpoint(
     except WorkspaceOwnerMemberError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_MEMBER_REMOVED,
+        resource_type=AuditResourceType.WORKSPACE_MEMBER,
+        resource_id=member.id,
+        metadata={"user_id": str(member.user_id), "role": member.role},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

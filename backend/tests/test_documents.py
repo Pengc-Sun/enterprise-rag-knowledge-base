@@ -13,6 +13,7 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import documents as document_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.document import Document
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
@@ -98,6 +99,34 @@ def set_overrides(user: User) -> None:
 
 def clear_overrides() -> None:
     app.dependency_overrides.clear()
+
+
+def patch_audit_log(
+    monkeypatch: pytest.MonkeyPatch,
+    records: list[dict[str, object]],
+) -> None:
+    async def fake_create_audit_log(
+        session: AsyncSession,
+        *,
+        workspace_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        action: AuditAction,
+        resource_type: AuditResourceType,
+        resource_id: uuid.UUID | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        records.append(
+            {
+                "workspace_id": workspace_id,
+                "actor_user_id": actor_user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "metadata": metadata or {},
+            }
+        )
+
+    monkeypatch.setattr(document_endpoints, "create_audit_log", fake_create_audit_log)
 
 
 def assert_read_roles(roles: frozenset[str]) -> None:
@@ -195,6 +224,7 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
     workspace = make_workspace(user.id)
     knowledge_base = make_knowledge_base(user.id, workspace.id)
     document = make_document(knowledge_base.id, workspace.id, user.id)
+    audit_logs: list[dict[str, object]] = []
 
     patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
     patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
@@ -235,6 +265,7 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
         fake_process_document_for_retrieval,
     )
     patch_settings(monkeypatch)
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -254,6 +285,14 @@ def test_upload_document_returns_created_document(monkeypatch: pytest.MonkeyPatc
     assert body["data"]["filename"] == "architecture.pdf"
     assert body["data"]["status"] == "completed"
     assert body["data"]["chunk_count"] == 2
+    assert audit_logs[0]["action"] == AuditAction.DOCUMENT_UPLOADED
+    assert audit_logs[0]["resource_id"] == document.id
+    assert audit_logs[0]["metadata"] == {
+        "knowledge_base_id": str(knowledge_base.id),
+        "filename": "architecture.pdf",
+        "status": "completed",
+        "chunk_count": 2,
+    }
 
 
 def test_upload_workspace_document_route(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -261,6 +300,7 @@ def test_upload_workspace_document_route(monkeypatch: pytest.MonkeyPatch) -> Non
     workspace = make_workspace(user.id)
     knowledge_base = make_knowledge_base(user.id, workspace.id)
     document = make_document(knowledge_base.id, workspace.id, user.id)
+    audit_logs: list[dict[str, object]] = []
 
     patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
     patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
@@ -293,6 +333,7 @@ def test_upload_workspace_document_route(monkeypatch: pytest.MonkeyPatch) -> Non
         fake_process_document_for_retrieval,
     )
     patch_settings(monkeypatch)
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -306,6 +347,7 @@ def test_upload_workspace_document_route(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert response.status_code == 201
     assert response.json()["data"]["workspace_id"] == str(workspace.id)
+    assert audit_logs[0]["action"] == AuditAction.DOCUMENT_UPLOADED
 
 
 def test_upload_document_without_workspace_id_returns_422() -> None:
@@ -504,6 +546,7 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
     knowledge_base = make_knowledge_base(user.id, workspace.id)
     document = make_document(knowledge_base.id, workspace.id, user.id)
     document.status = "completed"
+    audit_logs: list[dict[str, object]] = []
 
     patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
     patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
@@ -522,6 +565,7 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
         "process_document_for_retrieval",
         fake_process_document_for_retrieval,
     )
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -539,6 +583,13 @@ def test_reprocess_document_returns_processed_document(monkeypatch: pytest.Monke
     assert body["data"]["id"] == str(document.id)
     assert body["data"]["status"] == "completed"
     assert body["data"]["chunk_count"] == 4
+    assert audit_logs[0]["action"] == AuditAction.DOCUMENT_REPROCESSED
+    assert audit_logs[0]["metadata"] == {
+        "knowledge_base_id": str(knowledge_base.id),
+        "filename": "architecture.pdf",
+        "status": "completed",
+        "chunk_count": 4,
+    }
 
 
 def test_reprocess_document_returns_404_for_cross_workspace_document(
@@ -615,6 +666,7 @@ def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> 
     knowledge_base = make_knowledge_base(user.id, workspace.id)
     document = make_document(knowledge_base.id, workspace.id, user.id)
     deleted_document: Document | None = None
+    audit_logs: list[dict[str, object]] = []
 
     patch_workspace_access(monkeypatch, workspace=workspace, expected_roles=assert_write_roles)
     patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
@@ -625,6 +677,7 @@ def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> 
         deleted_document = document_arg
 
     monkeypatch.setattr(document_endpoints, "delete_document", fake_delete_document)
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -639,6 +692,8 @@ def test_delete_document_returns_no_content(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.status_code == 204
     assert response.content == b""
     assert deleted_document is document
+    assert audit_logs[0]["action"] == AuditAction.DOCUMENT_DELETED
+    assert audit_logs[0]["resource_id"] == document.id
 
 
 def test_delete_document_returns_404_for_missing_document(monkeypatch: pytest.MonkeyPatch) -> None:
