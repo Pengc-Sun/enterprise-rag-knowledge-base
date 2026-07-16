@@ -10,6 +10,8 @@ from backend.app.services.conversations import (
     create_conversation,
     create_message,
     delete_conversation,
+    get_conversation_for_user,
+    list_conversations_for_user,
     update_conversation,
 )
 
@@ -32,6 +34,31 @@ class FakeSession:
 
     async def delete(self, instance: object) -> None:
         self.deleted = instance
+
+
+class FakeScalars:
+    def all(self) -> list[Conversation]:
+        return []
+
+
+class FakeListResult:
+    def scalars(self) -> FakeScalars:
+        return FakeScalars()
+
+
+class FakeConversationResult:
+    def scalar_one_or_none(self) -> Conversation | None:
+        return None
+
+
+class FakeQuerySession:
+    def __init__(self, result: object) -> None:
+        self.result = result
+        self.statement: object | None = None
+
+    async def execute(self, statement: object) -> object:
+        self.statement = statement
+        return self.result
 
 
 def make_conversation() -> Conversation:
@@ -69,6 +96,48 @@ async def test_create_conversation_persists_user_and_knowledge_base() -> None:
     assert conversation.knowledge_base_id == knowledge_base_id
     assert conversation.workspace_id == workspace_id
     assert conversation.title == "Travel policy"
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_filters_by_workspace_and_knowledge_base() -> None:
+    session = FakeQuerySession(FakeListResult())
+    user_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+
+    conversations = await list_conversations_for_user(
+        session,  # type: ignore[arg-type]
+        user_id,
+        workspace_id,
+        knowledge_base_id,
+    )
+
+    assert conversations == []
+    assert session.statement is not None
+    compiled = str(session.statement.compile(compile_kwargs={"literal_binds": False}))  # type: ignore[attr-defined]
+    assert "conversations.user_id" in compiled
+    assert "conversations.workspace_id" in compiled
+    assert "conversations.knowledge_base_id" in compiled
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_filters_by_workspace_and_knowledge_base() -> None:
+    session = FakeQuerySession(FakeConversationResult())
+    conversation = await get_conversation_for_user(
+        session,  # type: ignore[arg-type]
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+        uuid.uuid4(),
+    )
+
+    assert conversation is None
+    assert session.statement is not None
+    compiled = str(session.statement.compile(compile_kwargs={"literal_binds": False}))  # type: ignore[attr-defined]
+    assert "conversations.id" in compiled
+    assert "conversations.user_id" in compiled
+    assert "conversations.workspace_id" in compiled
+    assert "conversations.knowledge_base_id" in compiled
 
 
 @pytest.mark.asyncio

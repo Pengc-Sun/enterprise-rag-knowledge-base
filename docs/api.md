@@ -504,12 +504,15 @@ Debug candidates include:
 
 ## Conversation Endpoints
 
-Conversations are scoped to a knowledge base and require read access to that knowledge base.
+Conversations are scoped to a workspace and knowledge base. Every conversation and message
+operation validates workspace membership first, then validates that the knowledge base and
+conversation belong to that workspace.
 
 ### Create conversation
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations?workspace_id={workspace_id}
 ```
 
 Request body:
@@ -523,19 +526,22 @@ Request body:
 ### List conversations
 
 ```text
-GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations?workspace_id={workspace_id}
 ```
 
 ### Read conversation
 
 ```text
-GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}?workspace_id={workspace_id}
 ```
 
 ### Update conversation
 
 ```text
-PATCH /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+PATCH /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+PATCH /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}?workspace_id={workspace_id}
 ```
 
 Request body:
@@ -549,7 +555,8 @@ Request body:
 ### Delete conversation
 
 ```text
-DELETE /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+DELETE /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
+DELETE /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}?workspace_id={workspace_id}
 ```
 
 Returns `204 No Content`.
@@ -557,13 +564,15 @@ Returns `204 No Content`.
 ### List messages
 
 ```text
-GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/messages
+GET /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/messages
+GET /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/messages?workspace_id={workspace_id}
 ```
 
 ### Chat
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat?workspace_id={workspace_id}
 ```
 
 Request body:
@@ -585,7 +594,8 @@ Stores both the user message and assistant message.
 ### Streaming chat
 
 ```text
-POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat/stream
+POST /api/v1/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat/stream
+POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}/chat/stream?workspace_id={workspace_id}
 ```
 
 Uses Server-Sent Events. The stream can emit token, metadata, source, completion, and error events.
@@ -600,7 +610,7 @@ Uses Server-Sent Events. The stream can emit token, metadata, source, completion
 | List/read documents | workspace owner, admin, editor, reviewer, viewer |
 | Upload/reprocess/delete documents | workspace owner or admin |
 | RAG query and debug | workspace owner, admin, editor, reviewer, viewer |
-| Conversations and chat | owner, editor, viewer |
+| Conversations and chat | workspace owner, admin, editor, reviewer, viewer |
 
 ## API Testing
 

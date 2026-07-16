@@ -14,6 +14,7 @@ from backend.app.main import app
 from backend.app.models.conversation import Conversation, Message, MessageRole
 from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseVisibility
 from backend.app.models.user import User, UserRole
+from backend.app.models.workspace import Workspace
 from backend.app.schemas.conversation import ConversationCreate, ConversationUpdate, MessageCreate
 from backend.app.services.llms import LLMProviderName
 from backend.app.services.query_rewriting import QueryRewriteMessage, QueryRewriteResult
@@ -34,27 +35,44 @@ def make_user() -> User:
     )
 
 
-def make_knowledge_base(owner_id: uuid.UUID) -> KnowledgeBase:
+def make_workspace(owner_id: uuid.UUID) -> Workspace:
+    now = datetime.now(UTC)
+    return Workspace(
+        id=uuid.uuid4(),
+        name="Policy Workspace",
+        slug=f"policy-{str(owner_id).replace('-', '')}",
+        owner_id=owner_id,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_knowledge_base(owner_id: uuid.UUID, workspace_id: uuid.UUID) -> KnowledgeBase:
     now = datetime.now(UTC)
     return KnowledgeBase(
         id=uuid.uuid4(),
         name="Engineering Handbook",
         description="Internal docs",
         owner_id=owner_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         visibility=KnowledgeBaseVisibility.PRIVATE.value,
         created_at=now,
         updated_at=now,
     )
 
 
-def make_conversation(user_id: uuid.UUID, knowledge_base_id: uuid.UUID) -> Conversation:
+def make_conversation(
+    user_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Conversation:
     now = datetime.now(UTC)
     return Conversation(
         id=uuid.uuid4(),
         user_id=user_id,
         knowledge_base_id=knowledge_base_id,
-        workspace_id=uuid.uuid4(),
+        workspace_id=workspace_id,
         title="Travel policy",
         created_at=now,
         updated_at=now,
@@ -91,21 +109,59 @@ def clear_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def test_create_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
-    user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
+def patch_workspace_access(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    workspace: Workspace | None,
+) -> None:
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace | None:
+        assert "viewer" in allowed_roles
+        if workspace is not None:
+            assert workspace_id == workspace.id
+            assert user_id == workspace.owner_id
+        return workspace
 
-    async def fake_get_knowledge_base_for_user(
+    monkeypatch.setattr(
+        conversation_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+
+
+def patch_knowledge_base(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    knowledge_base: KnowledgeBase | None,
+) -> None:
+    async def fake_get_knowledge_base_for_workspace(
         session: AsyncSession,
         knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert "viewer" in allowed_permissions
+        workspace_id: uuid.UUID,
+    ) -> KnowledgeBase | None:
+        if knowledge_base is not None:
+            assert knowledge_base_id == knowledge_base.id
+            assert workspace_id == knowledge_base.workspace_id
         return knowledge_base
+
+    monkeypatch.setattr(
+        conversation_endpoints,
+        "get_knowledge_base_for_workspace",
+        fake_get_knowledge_base_for_workspace,
+    )
+
+
+def test_create_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_create_conversation(
         session: AsyncSession,
@@ -120,18 +176,14 @@ def test_create_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
         assert conversation_create.title == "Travel policy"
         return conversation
 
-    monkeypatch.setattr(
-        conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
     monkeypatch.setattr(conversation_endpoints, "create_conversation", fake_create_conversation)
     set_overrides(user)
 
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations",
             json={"title": "Travel policy"},
         )
     finally:
@@ -147,31 +199,23 @@ def test_create_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_list_conversations(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_list_conversations_for_user(
         session: AsyncSession,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> list[Conversation]:
         assert user_id == user.id
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         return [conversation]
 
-    monkeypatch.setattr(
-        conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
     monkeypatch.setattr(
         conversation_endpoints,
         "list_conversations_for_user",
@@ -181,7 +225,10 @@ def test_list_conversations(monkeypatch: pytest.MonkeyPatch) -> None:
 
     try:
         client = TestClient(app)
-        response = client.get(f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations")
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations"
+        )
     finally:
         clear_overrides()
 
@@ -191,25 +238,22 @@ def test_list_conversations(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_update_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_get_conversation_for_user(
         session: AsyncSession,
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> Conversation:
         assert conversation_id == conversation.id
         assert user_id == user.id
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         return conversation
 
@@ -223,11 +267,6 @@ def test_update_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        conversation_endpoints,
         "get_conversation_for_user",
         fake_get_conversation_for_user,
     )
@@ -237,7 +276,8 @@ def test_update_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         client = TestClient(app)
         response = client.patch(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations/{conversation.id}",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations/{conversation.id}",
             json={"title": "Updated title"},
         )
     finally:
@@ -252,8 +292,9 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
     existing_messages = [
         Message(
             id=uuid.uuid4(),
@@ -266,25 +307,19 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
     ]
     saved_messages: list[MessageCreate] = []
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        assert knowledge_base_id == knowledge_base.id
-        assert user_id == user.id
-        assert "viewer" in allowed_permissions
-        return knowledge_base
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_get_conversation_for_user(
         session: AsyncSession,
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> Conversation:
         assert conversation_id == conversation.id
         assert user_id == user.id
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         return conversation
 
@@ -311,7 +346,7 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
-        assert workspace_id == conversation.workspace_id
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert [(item.role, item.content) for item in history] == [
@@ -352,11 +387,6 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
 
     monkeypatch.setattr(
         conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        conversation_endpoints,
         "get_conversation_for_user",
         fake_get_conversation_for_user,
     )
@@ -405,7 +435,8 @@ def test_chat_with_conversation_uses_history_and_persists_messages(
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations/{conversation.id}/chat",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations/{conversation.id}/chat",
             json={"question": "What about London?"},
         )
     finally:
@@ -431,8 +462,9 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
     existing_messages = [
         Message(
             id=uuid.uuid4(),
@@ -445,20 +477,17 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
     ]
     saved_messages: list[MessageCreate] = []
 
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_get_conversation_for_user(
         session: AsyncSession,
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> Conversation:
+        assert workspace_id == workspace.id
         return conversation
 
     async def fake_list_messages_for_conversation(
@@ -484,7 +513,7 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> RAGAnswer:
-        assert workspace_id == conversation.workspace_id
+        assert workspace_id == workspace.id
         assert knowledge_base_id == knowledge_base.id
         assert question == "What about London?"
         assert [(item.role, item.content) for item in history] == [
@@ -522,11 +551,6 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
 
     monkeypatch.setattr(
         conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        conversation_endpoints,
         "get_conversation_for_user",
         fake_get_conversation_for_user,
     )
@@ -575,7 +599,8 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations/{conversation.id}/chat/stream",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations/{conversation.id}/chat/stream",
             json={"question": "What about London?"},
         )
     finally:
@@ -597,24 +622,21 @@ def test_stream_chat_with_conversation_returns_sse_events_and_persists_messages(
 
 def test_create_message(monkeypatch: pytest.MonkeyPatch) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-    conversation = make_conversation(user.id, knowledge_base.id)
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
     message = make_message(conversation.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_get_conversation_for_user(
         session: AsyncSession,
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> Conversation:
+        assert workspace_id == workspace.id
         return conversation
 
     async def fake_create_message(
@@ -628,11 +650,6 @@ def test_create_message(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
-    monkeypatch.setattr(
-        conversation_endpoints,
         "get_conversation_for_user",
         fake_get_conversation_for_user,
     )
@@ -642,7 +659,8 @@ def test_create_message(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         client = TestClient(app)
         response = client.post(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations/{conversation.id}/messages",
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations/{conversation.id}/messages",
             json={"role": "user", "content": "What is the travel policy?"},
         )
     finally:
@@ -659,29 +677,21 @@ def test_read_conversation_returns_404_when_not_owned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
-    knowledge_base = make_knowledge_base(user.id)
-
-    async def fake_get_knowledge_base_for_user(
-        session: AsyncSession,
-        knowledge_base_id: uuid.UUID,
-        user_id: uuid.UUID,
-        allowed_permissions: frozenset[str],
-    ) -> KnowledgeBase:
-        return knowledge_base
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
 
     async def fake_get_conversation_for_user(
         session: AsyncSession,
         conversation_id: uuid.UUID,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         knowledge_base_id: uuid.UUID,
     ) -> None:
+        assert workspace_id == workspace.id
         return None
 
-    monkeypatch.setattr(
-        conversation_endpoints,
-        "get_knowledge_base_for_user",
-        fake_get_knowledge_base_for_user,
-    )
     monkeypatch.setattr(
         conversation_endpoints,
         "get_conversation_for_user",
@@ -692,10 +702,50 @@ def test_read_conversation_returns_404_when_not_owned(
     try:
         client = TestClient(app)
         response = client.get(
-            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations/{uuid.uuid4()}"
+            f"/api/v1/workspaces/{workspace.id}/knowledge-bases/"
+            f"{knowledge_base.id}/conversations/{uuid.uuid4()}"
         )
     finally:
         clear_overrides()
 
     assert response.status_code == 404
     assert response.json()["message"] == "Conversation not found"
+
+
+def test_legacy_conversation_route_requires_workspace_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    knowledge_base = make_knowledge_base(user.id, workspace.id)
+    conversation = make_conversation(user.id, knowledge_base.id, workspace.id)
+    patch_workspace_access(monkeypatch, workspace=workspace)
+    patch_knowledge_base(monkeypatch, knowledge_base=knowledge_base)
+
+    async def fake_list_conversations_for_user(
+        session: AsyncSession,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        knowledge_base_id: uuid.UUID,
+    ) -> list[Conversation]:
+        assert workspace_id == workspace.id
+        return [conversation]
+
+    monkeypatch.setattr(
+        conversation_endpoints,
+        "list_conversations_for_user",
+        fake_list_conversations_for_user,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/knowledge-bases/{knowledge_base.id}/conversations"
+            f"?workspace_id={workspace.id}"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["workspace_id"] == str(workspace.id)

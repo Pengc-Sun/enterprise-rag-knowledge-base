@@ -3,7 +3,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from backend.app.db.session import get_db_session
 from backend.app.models.conversation import Conversation, MessageRole
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.user import User
+from backend.app.models.workspace import Workspace
 from backend.app.schemas.conversation import (
     ConversationChatRequest,
     ConversationChatResponse,
@@ -36,16 +37,21 @@ from backend.app.services.conversations import (
     update_conversation,
 )
 from backend.app.services.embeddings import EmbeddingProviderError, create_embedding_provider
-from backend.app.services.knowledge_bases import READ_PERMISSIONS, get_knowledge_base_for_user
+from backend.app.services.knowledge_bases import get_knowledge_base_for_workspace
 from backend.app.services.llms import LLMProviderError, create_llm_provider
 from backend.app.services.query_rewriting import create_query_rewrite_config
 from backend.app.services.rag import RAGSourceCitation, answer_knowledge_base_question
 from backend.app.services.rerankers import RerankerError, create_reranker
 from backend.app.services.retrieval import RetrievalMetadataFilter, create_retrieval_config
 from backend.app.services.streaming import format_sse_event, stream_text_tokens
+from backend.app.services.workspaces import READ_ROLES, get_workspace_for_user
 
 router = APIRouter(
     prefix="/knowledge-bases/{knowledge_base_id}/conversations",
+    tags=["conversations"],
+)
+workspace_router = APIRouter(
+    prefix="/workspaces/{workspace_id}/knowledge-bases/{knowledge_base_id}/conversations",
     tags=["conversations"],
 )
 
@@ -54,11 +60,50 @@ router = APIRouter(
 async def create_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_create: ConversationCreate,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[ConversationRead]:
+    return await create_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_create,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.post(
+    "",
+    response_model=APIResponse[ConversationRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_create: ConversationCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ConversationRead]:
+    return await create_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_create,
+        current_user,
+        session,
+    )
+
+
+async def create_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_create: ConversationCreate,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[ConversationRead]:
     knowledge_base = await get_knowledge_base_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         current_user.id,
     )
@@ -78,15 +123,51 @@ async def create_conversation_endpoint(
 @router.get("", response_model=APIResponse[list[ConversationRead]])
 async def list_conversations_endpoint(
     knowledge_base_id: uuid.UUID,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[list[ConversationRead]]:
+    return await list_conversations_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.get("", response_model=APIResponse[list[ConversationRead]])
+async def list_workspace_conversations_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[ConversationRead]]:
+    return await list_conversations_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        current_user,
+        session,
+    )
+
+
+async def list_conversations_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[list[ConversationRead]]:
     knowledge_base = await get_knowledge_base_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         current_user.id,
     )
-    conversations = await list_conversations_for_user(session, current_user.id, knowledge_base.id)
+    conversations = await list_conversations_for_user(
+        session,
+        current_user.id,
+        workspace_id,
+        knowledge_base.id,
+    )
     return success_response([ConversationRead.model_validate(item) for item in conversations])
 
 
@@ -94,11 +175,46 @@ async def list_conversations_endpoint(
 async def read_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[ConversationRead]:
+    return await read_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.get("/{conversation_id}", response_model=APIResponse[ConversationRead])
+async def read_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ConversationRead]:
+    return await read_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+async def read_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[ConversationRead]:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -111,11 +227,50 @@ async def update_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
     conversation_update: ConversationUpdate,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[ConversationRead]:
+    return await update_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        conversation_update,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.patch("/{conversation_id}", response_model=APIResponse[ConversationRead])
+async def update_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    conversation_update: ConversationUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ConversationRead]:
+    return await update_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        conversation_update,
+        current_user,
+        session,
+    )
+
+
+async def update_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    conversation_update: ConversationUpdate,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[ConversationRead]:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -131,11 +286,46 @@ async def update_conversation_endpoint(
 async def delete_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
+    return await delete_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    return await delete_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+async def delete_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> Response:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -149,11 +339,53 @@ async def chat_with_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
     chat_request: ConversationChatRequest,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[ConversationChatResponse]:
+    return await chat_with_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        chat_request,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.post(
+    "/{conversation_id}/chat",
+    response_model=APIResponse[ConversationChatResponse],
+)
+async def chat_with_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    chat_request: ConversationChatRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ConversationChatResponse]:
+    return await chat_with_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        chat_request,
+        current_user,
+        session,
+    )
+
+
+async def chat_with_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    chat_request: ConversationChatRequest,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[ConversationChatResponse]:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -163,7 +395,7 @@ async def chat_with_conversation_endpoint(
     try:
         rag_answer = await answer_knowledge_base_question(
             session=session,
-            workspace_id=conversation.workspace_id,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             question=chat_request.question,
             embedding_provider=create_embedding_provider(settings),
@@ -232,11 +464,50 @@ async def stream_chat_with_conversation_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
     chat_request: ConversationChatRequest,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> StreamingResponse:
+    return await stream_chat_with_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        chat_request,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.post("/{conversation_id}/chat/stream")
+async def stream_chat_with_workspace_conversation_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    chat_request: ConversationChatRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> StreamingResponse:
+    return await stream_chat_with_conversation_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        chat_request,
+        current_user,
+        session,
+    )
+
+
+async def stream_chat_with_conversation_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    chat_request: ConversationChatRequest,
+    current_user: User,
+    session: AsyncSession,
+) -> StreamingResponse:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -244,6 +515,7 @@ async def stream_chat_with_conversation_endpoint(
     return StreamingResponse(
         stream_conversation_answer(
             session=session,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             conversation=conversation,
             chat_request=chat_request,
@@ -256,6 +528,7 @@ async def stream_chat_with_conversation_endpoint(
 
 async def stream_conversation_answer(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     conversation: Conversation,
     chat_request: ConversationChatRequest,
@@ -267,7 +540,7 @@ async def stream_conversation_answer(
         context_messages = await list_messages_for_conversation(session, conversation)
         rag_answer = await answer_knowledge_base_question(
             session=session,
-            workspace_id=conversation.workspace_id,
+            workspace_id=workspace_id,
             knowledge_base_id=knowledge_base_id,
             question=chat_request.question,
             embedding_provider=create_embedding_provider(settings),
@@ -344,11 +617,54 @@ async def create_message_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
     message_create: MessageCreate,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[MessageRead]:
+    return await create_message_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        message_create,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.post(
+    "/{conversation_id}/messages",
+    response_model=APIResponse[MessageRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workspace_message_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message_create: MessageCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[MessageRead]:
+    return await create_message_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        message_create,
+        current_user,
+        session,
+    )
+
+
+async def create_message_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message_create: MessageCreate,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[MessageRead]:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -361,11 +677,46 @@ async def create_message_endpoint(
 async def list_messages_endpoint(
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
+    workspace_id: Annotated[uuid.UUID, Query()],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[list[MessageRead]]:
+    return await list_messages_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+@workspace_router.get("/{conversation_id}/messages", response_model=APIResponse[list[MessageRead]])
+async def list_workspace_messages_endpoint(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[MessageRead]]:
+    return await list_messages_in_workspace(
+        workspace_id,
+        knowledge_base_id,
+        conversation_id,
+        current_user,
+        session,
+    )
+
+
+async def list_messages_in_workspace(
+    workspace_id: uuid.UUID,
+    knowledge_base_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    current_user: User,
+    session: AsyncSession,
+) -> APIResponse[list[MessageRead]]:
     conversation = await get_conversation_or_404(
         session,
+        workspace_id,
         knowledge_base_id,
         conversation_id,
         current_user.id,
@@ -376,14 +727,15 @@ async def list_messages_endpoint(
 
 async def get_knowledge_base_or_404(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> KnowledgeBase:
-    knowledge_base = await get_knowledge_base_for_user(
+    await get_workspace_or_404(session, workspace_id, user_id)
+    knowledge_base = await get_knowledge_base_for_workspace(
         session,
         knowledge_base_id,
-        user_id,
-        READ_PERMISSIONS,
+        workspace_id,
     )
     if knowledge_base is None:
         raise HTTPException(
@@ -395,15 +747,22 @@ async def get_knowledge_base_or_404(
 
 async def get_conversation_or_404(
     session: AsyncSession,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> Conversation:
-    knowledge_base = await get_knowledge_base_or_404(session, knowledge_base_id, user_id)
+    knowledge_base = await get_knowledge_base_or_404(
+        session,
+        workspace_id,
+        knowledge_base_id,
+        user_id,
+    )
     conversation = await get_conversation_for_user(
         session,
         conversation_id,
         user_id,
+        workspace_id,
         knowledge_base.id,
     )
     if conversation is None:
@@ -412,6 +771,20 @@ async def get_conversation_or_404(
             detail="Conversation not found",
         )
     return conversation
+
+
+async def get_workspace_or_404(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Workspace:
+    workspace = await get_workspace_for_user(session, workspace_id, user_id, READ_ROLES)
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
+        )
+    return workspace
 
 
 def build_retrieval_metadata_filter(filters: RAGMetadataFilter) -> RetrievalMetadataFilter:

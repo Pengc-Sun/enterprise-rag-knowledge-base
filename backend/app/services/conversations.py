@@ -32,12 +32,14 @@ async def create_conversation(
 async def list_conversations_for_user(
     session: AsyncSession,
     user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
 ) -> list[Conversation]:
     result = await session.execute(
         select(Conversation)
         .where(
             Conversation.user_id == user_id,
+            Conversation.workspace_id == workspace_id,
             Conversation.knowledge_base_id == knowledge_base_id,
         )
         .order_by(Conversation.updated_at.desc())
@@ -49,6 +51,7 @@ async def get_conversation_for_user(
     session: AsyncSession,
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     knowledge_base_id: uuid.UUID,
 ) -> Conversation | None:
     result = await session.execute(
@@ -57,6 +60,7 @@ async def get_conversation_for_user(
         .where(
             Conversation.id == conversation_id,
             Conversation.user_id == user_id,
+            Conversation.workspace_id == workspace_id,
             Conversation.knowledge_base_id == knowledge_base_id,
         )
     )
