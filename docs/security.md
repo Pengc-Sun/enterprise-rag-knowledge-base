@@ -4,10 +4,12 @@ This document summarizes the current security model, controls, and remaining har
 
 ## Security Scope
 
-The current project protects private knowledge bases through:
+The current project protects private workspaces and knowledge bases through:
 
 - JWT authentication.
 - Active-user checks.
+- Workspace membership checks.
+- Workspace-scoped resource lookups.
 - Knowledge-base-scoped permissions.
 - Upload validation.
 - Unified error handling.
@@ -36,7 +38,17 @@ Invalid, expired, missing, or malformed tokens return `401 unauthorized`.
 
 ## Authorization
 
-Knowledge base permissions use three roles:
+Workspace membership is the v2.0 top-level authorization boundary:
+
+| Role | Access |
+| --- | --- |
+| `owner` | Full workspace control, including delete. |
+| `admin` | Workspace write and member-management operations. |
+| `editor` | Workspace read and future content-editing workflows. |
+| `reviewer` | Workspace read and future review workflows. |
+| `viewer` | Workspace read-only operations. |
+
+Knowledge base permissions remain available for v1.0 compatibility:
 
 | Permission | Access |
 | --- | --- |
@@ -46,13 +58,13 @@ Knowledge base permissions use three roles:
 
 Endpoint behavior:
 
-- Knowledge base reads allow owner, editor, viewer.
-- Knowledge base updates require owner or editor.
-- Knowledge base delete requires owner.
-- Document listing requires read access.
-- Document upload, reprocess, and delete require write access.
+- Workspace-scoped knowledge base reads allow workspace owner, admin, editor, reviewer, or viewer.
+- Workspace-scoped knowledge base create/update require workspace owner or admin.
+- Workspace-scoped knowledge base delete requires workspace owner.
+- Document listing requires workspace read access.
+- Document upload, reprocess, and delete require workspace owner or admin.
 - Workspace creation, workspace updates, member changes, and document write actions create database audit log records.
-- RAG query, retrieval debug, conversations, and chat require read access.
+- RAG query, retrieval debug, conversations, and chat require workspace read access.
 
 For scoped resources, unauthorized access generally returns `404 Knowledge base not found` or resource-specific `404`, which avoids confirming whether private resources exist.
 
@@ -82,13 +94,18 @@ Allowed types:
 
 ## Data Isolation
 
-Isolation is enforced at the service and query layers:
+Isolation is enforced at the API, service, and query layers:
 
-- Knowledge base access checks include the current user ID and allowed permissions.
-- Document routes always include `knowledge_base_id` and verify access before document lookup.
-- Retrieval queries are scoped to a single `knowledge_base_id`.
-- Conversations are scoped to both user and knowledge base.
+- Workspace access is checked before nested knowledge-base, document, conversation, RAG, or retrieval operations.
+- Workspace-scoped routes include `workspace_id` in the path.
+- Top-level compatibility routes require `workspace_id` as a query parameter.
+- Knowledge bases are resolved by `(workspace_id, knowledge_base_id)`.
+- Documents are resolved by `(workspace_id, knowledge_base_id, document_id)`.
+- Conversations are resolved by `(workspace_id, knowledge_base_id, conversation_id, user_id)`.
+- Retrieval queries are scoped to both `workspace_id` and `knowledge_base_id`.
+- Retrieval cannot return chunks from another workspace.
 - Metadata filters are applied inside retrieval query builders.
+- Cross-workspace access returns `404` before lower-level document reads, retrieval, chat, or LLM calls.
 
 ## Error Handling
 

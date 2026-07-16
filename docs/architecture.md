@@ -81,7 +81,7 @@ Main entities:
 - `Workspace`: v2.0 project boundary with owner, slug, status, optional template, and member list.
 - `WorkspaceMember`: v2.0 user-to-workspace role row with `owner`, `admin`, `editor`, `reviewer`, or `viewer`.
 - `WorkspaceTemplate`: v2.0 reusable workspace definition with category, directory schema, analysis task schema, and report schema.
-- `KnowledgeBase`: v1.0 user-owned collection for documents, conversations, and permissions. It remains the active document boundary until the Week 2 v2.0 migration attaches existing knowledge-base data to workspaces.
+- `KnowledgeBase`: workspace-scoped collection for documents, conversations, and permissions. v1.0 compatibility routes remain available only when workspace context is provided.
 - `KnowledgeBaseMember`: user-to-knowledge-base permission row with `owner`, `editor`, or `viewer` permissions.
 - `Document`: uploaded file metadata, hash, storage path, status, and creator.
 - `DocumentChunk`: parsed content chunk with page, section, token count, JSON metadata, full-text vector, and pgvector embedding.
@@ -92,7 +92,7 @@ Main entities:
 Important relationships:
 
 - Deleting a user cascades owned knowledge bases, memberships, conversations, owned workspaces, and workspace memberships.
-- Deleting a workspace cascades workspace memberships. Later v2.0 migration work will attach knowledge bases, documents, chunks, and conversations to workspaces.
+- Deleting a workspace cascades workspace memberships, knowledge bases, documents, chunks, conversations, and messages through workspace-scoped relationships.
 - Deleting a knowledge base cascades members, documents, chunks, conversations, and messages.
 - Deleting a document cascades its chunks and removes the stored upload file.
 - Audit logs preserve workspace, actor, and resource IDs independently of resource deletion.
@@ -125,6 +125,20 @@ Authorization is enforced in service or endpoint logic through knowledge base an
 - Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 
 Unauthorized or missing resources intentionally return `404` for scoped access in many paths, which avoids leaking private resource existence.
+
+## Workspace Isolation
+
+Workspace isolation is enforced across the v2.0 backend surface:
+
+- Knowledge bases are looked up by `(workspace_id, knowledge_base_id)`.
+- Documents are looked up by `(workspace_id, knowledge_base_id, document_id)`.
+- Conversations are looked up by `(workspace_id, knowledge_base_id, conversation_id, user_id)`.
+- Retrieval query builders filter `document_chunks` by both `workspace_id` and
+  `knowledge_base_id`.
+- RAG query and retrieval debug endpoints validate workspace membership before provider calls.
+- Cross-workspace access returns `404` before document reads, retrieval, chat, stream, or LLM
+  execution.
+- Write actions for workspaces, workspace members, and documents create `AuditLog` records.
 
 ## Document Ingestion Flow
 

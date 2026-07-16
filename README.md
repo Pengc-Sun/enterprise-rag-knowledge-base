@@ -405,6 +405,7 @@ v2.0 upgrade progress:
 
 - Week 1: workspace foundation, workspace/member/template models, migrations, CRUD APIs, role-based member management, built-in template APIs, and backend access-control test coverage.
 - Week 2: v1.0 knowledge-base data migration into workspaces, required workspace IDs on existing data tables, seeded migration validation, Alembic downgrade/upgrade validation, and Docker migrate startup validation.
+- Week 3: workspace isolation across knowledge bases, documents, retrieval, RAG, conversations, messages, cross-workspace negative tests, and workspace/document audit logging.
 
 ## Development Logs
 
@@ -413,8 +414,9 @@ v2.0 upgrade progress:
 - `docs/development-log/week-2.md`
 - `docs/development-log/v2-week-1.md`
 - `docs/development-log/v2-week-2.md`
+- `docs/development-log/v2-week-3.md`
 
-Week 3 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
+Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
 ## Week 1 Acceptance Status
 
@@ -521,6 +523,27 @@ Week 3 through Week 8 completion summaries are included below in the acceptance 
 - Built-in workspace template list/detail APIs return active template definitions.
 - Backend tests cover workspace CRUD, ownership, member roles, template listing, and key access-control boundaries.
 - Backend verification passed with pytest, Ruff, and mypy on `feature/v2-workspaces`.
+
+## v2.0 Week 2 Acceptance Status
+
+- Existing v1.0 knowledge-base data migrates into default owner workspaces without data loss.
+- `workspace_id` is required on knowledge bases, documents, document chunks, and conversations.
+- Alembic migrations `0013` through `0016` add nullable workspace IDs, create default workspaces, backfill existing data, and enforce required workspace IDs.
+- Models, schemas, and services expose and persist workspace IDs.
+- Seeded migration validation covers users, knowledge bases, documents, chunks, conversations, and messages.
+- Production Docker startup includes a one-shot Alembic migrate service and health-gated backend startup.
+- Migration verification passed for seeded v1.0 data, Alembic downgrade/upgrade, and Docker migrate startup ordering.
+
+## v2.0 Week 3 Acceptance Status
+
+- Knowledge-base, document, RAG, retrieval debug, conversation, message, chat, and streaming chat paths require workspace context.
+- Workspace-scoped routes are available for knowledge bases, documents, RAG queries, retrieval debug, and conversations.
+- Compatibility routes remain available only with an explicit `workspace_id` query parameter.
+- Retrieval candidates are filtered by both `workspace_id` and `knowledge_base_id`.
+- Conversations and messages validate workspace membership before read, write, chat, or stream operations.
+- Cross-workspace negative tests cover documents, chunks/retrieval, conversations, and RAG queries.
+- `audit_logs` records key workspace, workspace member, and document write actions.
+- Week 3 close-out verification passed with pytest, Ruff, mypy, Alembic current, Alembic `0017` upgrade/downgrade, and `git diff --check`.
 
 ## CI
 
