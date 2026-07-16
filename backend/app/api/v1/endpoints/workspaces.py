@@ -8,10 +8,13 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.db.session import get_db_session
 from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.user import User
-from backend.app.models.workspace import Workspace, WorkspaceMember
+from backend.app.models.workspace import Workspace, WorkspaceDirectory, WorkspaceMember
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDirectoryCreate,
+    WorkspaceDirectoryRead,
+    WorkspaceDirectoryUpdate,
     WorkspaceMemberCreate,
     WorkspaceMemberRead,
     WorkspaceMemberUpdate,
@@ -20,6 +23,15 @@ from backend.app.schemas.workspace import (
 )
 from backend.app.services.audit_logs import create_audit_log
 from backend.app.services.users import get_user_by_id
+from backend.app.services.workspace_directories import (
+    WorkspaceDirectoryParentError,
+    WorkspaceDirectorySelfParentError,
+    create_workspace_directory,
+    delete_workspace_directory,
+    get_workspace_directory,
+    list_workspace_directories,
+    update_workspace_directory,
+)
 from backend.app.services.workspaces import (
     MEMBER_MANAGEMENT_ROLES,
     OWNER_ROLES,
@@ -123,6 +135,135 @@ async def delete_workspace_endpoint(
         action=AuditAction.WORKSPACE_DELETED,
         resource_type=AuditResourceType.WORKSPACE,
         resource_id=workspace.id,
+        metadata=audit_metadata,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{workspace_id}/directories",
+    response_model=APIResponse[list[WorkspaceDirectoryRead]],
+)
+async def list_workspace_directories_endpoint(
+    workspace_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[WorkspaceDirectoryRead]]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    directories = await list_workspace_directories(session, workspace_id)
+    return success_response(
+        [WorkspaceDirectoryRead.model_validate(directory) for directory in directories]
+    )
+
+
+@router.post(
+    "/{workspace_id}/directories",
+    response_model=APIResponse[WorkspaceDirectoryRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workspace_directory_endpoint(
+    workspace_id: uuid.UUID,
+    directory_create: WorkspaceDirectoryCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[WorkspaceDirectoryRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    try:
+        directory = await create_workspace_directory(session, workspace_id, directory_create)
+    except WorkspaceDirectoryParentError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_DIRECTORY_CREATED,
+        resource_type=AuditResourceType.WORKSPACE_DIRECTORY,
+        resource_id=directory.id,
+        metadata={"name": directory.name, "path": directory.path},
+    )
+    return success_response(
+        WorkspaceDirectoryRead.model_validate(directory),
+        message="workspace directory created",
+    )
+
+
+@router.get(
+    "/{workspace_id}/directories/{directory_id}",
+    response_model=APIResponse[WorkspaceDirectoryRead],
+)
+async def read_workspace_directory_endpoint(
+    workspace_id: uuid.UUID,
+    directory_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[WorkspaceDirectoryRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    directory = await get_workspace_directory_or_404(session, workspace_id, directory_id)
+    return success_response(WorkspaceDirectoryRead.model_validate(directory))
+
+
+@router.patch(
+    "/{workspace_id}/directories/{directory_id}",
+    response_model=APIResponse[WorkspaceDirectoryRead],
+)
+async def update_workspace_directory_endpoint(
+    workspace_id: uuid.UUID,
+    directory_id: uuid.UUID,
+    directory_update: WorkspaceDirectoryUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[WorkspaceDirectoryRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    directory = await get_workspace_directory_or_404(session, workspace_id, directory_id)
+    try:
+        updated_directory = await update_workspace_directory(
+            session,
+            workspace_id,
+            directory,
+            directory_update,
+        )
+    except WorkspaceDirectoryParentError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message) from exc
+    except WorkspaceDirectorySelfParentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_DIRECTORY_UPDATED,
+        resource_type=AuditResourceType.WORKSPACE_DIRECTORY,
+        resource_id=updated_directory.id,
+        metadata=directory_update.model_dump(mode="json", exclude_unset=True),
+    )
+    return success_response(
+        WorkspaceDirectoryRead.model_validate(updated_directory),
+        message="workspace directory updated",
+    )
+
+
+@router.delete(
+    "/{workspace_id}/directories/{directory_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_workspace_directory_endpoint(
+    workspace_id: uuid.UUID,
+    directory_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Response:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    directory = await get_workspace_directory_or_404(session, workspace_id, directory_id)
+    audit_metadata: dict[str, object] = {"name": directory.name, "path": directory.path}
+    await delete_workspace_directory(session, directory)
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.WORKSPACE_DIRECTORY_DELETED,
+        resource_type=AuditResourceType.WORKSPACE_DIRECTORY,
+        resource_id=directory.id,
         metadata=audit_metadata,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -279,3 +420,17 @@ async def get_workspace_member_or_404(
             detail="Workspace member not found",
         )
     return member
+
+
+async def get_workspace_directory_or_404(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    directory_id: uuid.UUID,
+) -> WorkspaceDirectory:
+    directory = await get_workspace_directory(session, workspace_id, directory_id)
+    if directory is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace directory not found",
+        )
+    return directory

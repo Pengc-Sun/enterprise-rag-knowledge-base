@@ -10,6 +10,8 @@ from backend.app.models.workspace import (
 )
 from backend.app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDirectoryCreate,
+    WorkspaceDirectoryUpdate,
     WorkspaceMemberCreate,
     WorkspaceTemplateCreate,
     WorkspaceUpdate,
@@ -59,3 +61,29 @@ def test_workspace_member_create_defaults_to_viewer() -> None:
     member = WorkspaceMemberCreate(user_id=uuid.uuid4())
 
     assert member.role == WorkspaceMemberRole.VIEWER
+
+
+def test_workspace_directory_create_accepts_nested_path() -> None:
+    parent_id = uuid.uuid4()
+
+    directory = WorkspaceDirectoryCreate(
+        name="Reviewed Papers",
+        path="papers/reviewed",
+        description="Reviewed research papers",
+        parent_id=parent_id,
+        sort_order=20,
+    )
+
+    assert directory.parent_id == parent_id
+    assert directory.path == "papers/reviewed"
+
+
+def test_workspace_directory_create_rejects_invalid_path() -> None:
+    with pytest.raises(ValidationError):
+        WorkspaceDirectoryCreate(name="Invalid", path="Invalid Path")
+
+
+def test_workspace_directory_update_allows_clearing_parent() -> None:
+    update = WorkspaceDirectoryUpdate(parent_id=None)
+
+    assert update.model_dump(exclude_unset=True) == {"parent_id": None}

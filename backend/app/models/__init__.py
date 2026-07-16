@@ -15,6 +15,7 @@ from backend.app.models.knowledge_base import (
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
+    WorkspaceDirectory,
     WorkspaceMember,
     WorkspaceMemberRole,
     WorkspaceStatus,
@@ -40,6 +41,7 @@ __all__ = [
     "User",
     "UserRole",
     "Workspace",
+    "WorkspaceDirectory",
     "WorkspaceMember",
     "WorkspaceMemberRole",
     "WorkspaceStatus",

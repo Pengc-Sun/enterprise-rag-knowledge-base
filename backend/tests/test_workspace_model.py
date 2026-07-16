@@ -3,6 +3,7 @@ import uuid
 from backend.app.models.user import User
 from backend.app.models.workspace import (
     Workspace,
+    WorkspaceDirectory,
     WorkspaceMember,
     WorkspaceMemberRole,
     WorkspaceStatus,
@@ -83,3 +84,37 @@ def test_workspace_template_relationship() -> None:
     assert workspace in template.workspaces
     assert template.category == "it_support"
     assert template.directory_schema == {"directories": [{"name": "Runbooks"}]}
+
+
+def test_workspace_directory_relationships() -> None:
+    owner = User(
+        id=uuid.uuid4(),
+        email="directory-owner@example.com",
+        username="directory_owner",
+        hashed_password="hashed",
+    )
+    workspace = Workspace(
+        name="Research Workspace",
+        slug="research-workspace",
+        owner=owner,
+    )
+    parent = WorkspaceDirectory(
+        workspace=workspace,
+        name="Papers",
+        path="papers",
+        sort_order=10,
+    )
+    child = WorkspaceDirectory(
+        workspace=workspace,
+        parent=parent,
+        name="Reviewed Papers",
+        path="papers/reviewed",
+        sort_order=20,
+    )
+
+    assert parent.workspace is workspace
+    assert child.workspace is workspace
+    assert child.parent is parent
+    assert child in parent.children
+    assert parent in workspace.directories
+    assert child in workspace.directories

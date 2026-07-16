@@ -150,3 +150,27 @@ def test_day22_workspace_template_schema_migration_updates_built_in_templates() 
     assert "output_schema" in task
     assert "source_task_keys" in section
     assert template["report_schema"]["export_formats"] == ["markdown", "docx", "pdf"]
+
+
+def test_day23_workspace_directory_migration_creates_scoped_directory_table() -> None:
+    migration = load_migration(
+        "migration_0019",
+        "20260716_0019_create_workspace_directories_table.py",
+    )
+
+    assert migration.revision == "0019"
+    assert migration.down_revision == "0018"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"workspace_directories"' in source
+    assert '"workspace_id"' in source
+    assert '"parent_id"' in source
+    assert '"name"' in source
+    assert '"path"' in source
+    assert '"description"' in source
+    assert '"sort_order"' in source
+    assert "fk_workspace_directories_workspace_id_workspaces" in source
+    assert "fk_workspace_directories_parent_id_workspace_directories" in source
+    assert "uq_workspace_directories_workspace_path" in source
+    assert "ix_workspace_directories_workspace_id" in source

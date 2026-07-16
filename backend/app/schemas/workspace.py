@@ -10,6 +10,7 @@ from backend.app.models.workspace import (
 )
 
 SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+DIRECTORY_PATH_PATTERN = r"^[a-z0-9]+(?:[-/][a-z0-9]+)*$"
 
 
 class WorkspaceTemplateBase(BaseModel):
@@ -77,6 +78,40 @@ class WorkspaceMemberUpdate(BaseModel):
 
 
 class WorkspaceMemberRead(WorkspaceMemberBase):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkspaceDirectoryBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    path: str = Field(min_length=1, max_length=500, pattern=DIRECTORY_PATH_PATTERN)
+    description: str | None = Field(default=None, max_length=5000)
+    parent_id: uuid.UUID | None = None
+    sort_order: int = 0
+
+
+class WorkspaceDirectoryCreate(WorkspaceDirectoryBase):
+    pass
+
+
+class WorkspaceDirectoryUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    path: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+        pattern=DIRECTORY_PATH_PATTERN,
+    )
+    description: str | None = Field(default=None, max_length=5000)
+    parent_id: uuid.UUID | None = None
+    sort_order: int | None = None
+
+
+class WorkspaceDirectoryRead(WorkspaceDirectoryBase):
     id: uuid.UUID
     workspace_id: uuid.UUID
     created_at: datetime

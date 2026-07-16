@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -115,6 +115,10 @@ class Workspace(Base):
         back_populates="workspace",
         cascade="all, delete-orphan",
     )
+    directories: Mapped[list[WorkspaceDirectory]] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
 
 
 class WorkspaceMember(Base):
@@ -154,3 +158,48 @@ class WorkspaceMember(Base):
     )
     workspace: Mapped[Workspace] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="workspace_memberships")
+
+
+class WorkspaceDirectory(Base):
+    __tablename__ = "workspace_directories"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "path", name="uq_workspace_directories_workspace_path"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace_directories.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    path: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    workspace: Mapped[Workspace] = relationship(back_populates="directories")
+    parent: Mapped[WorkspaceDirectory | None] = relationship(
+        back_populates="children",
+        remote_side="WorkspaceDirectory.id",
+    )
+    children: Mapped[list[WorkspaceDirectory]] = relationship(
+        back_populates="parent",
+        cascade="all, delete-orphan",
+    )

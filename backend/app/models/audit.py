@@ -18,6 +18,9 @@ class AuditAction(StrEnum):
     WORKSPACE_MEMBER_ADDED = "workspace_member.added"
     WORKSPACE_MEMBER_UPDATED = "workspace_member.updated"
     WORKSPACE_MEMBER_REMOVED = "workspace_member.removed"
+    WORKSPACE_DIRECTORY_CREATED = "workspace_directory.created"
+    WORKSPACE_DIRECTORY_UPDATED = "workspace_directory.updated"
+    WORKSPACE_DIRECTORY_DELETED = "workspace_directory.deleted"
     DOCUMENT_UPLOADED = "document.uploaded"
     DOCUMENT_REPROCESSED = "document.reprocessed"
     DOCUMENT_DELETED = "document.deleted"
@@ -26,6 +29,7 @@ class AuditAction(StrEnum):
 class AuditResourceType(StrEnum):
     WORKSPACE = "workspace"
     WORKSPACE_MEMBER = "workspace_member"
+    WORKSPACE_DIRECTORY = "workspace_directory"
     DOCUMENT = "document"
 
 

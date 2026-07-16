@@ -13,6 +13,7 @@ from backend.app.main import app
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
+    WorkspaceDirectory,
     WorkspaceMember,
     WorkspaceMemberRole,
     WorkspaceStatus,
@@ -70,6 +71,20 @@ def make_member(
         workspace_id=workspace_id,
         user_id=user_id,
         role=role.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_directory(workspace_id: uuid.UUID) -> WorkspaceDirectory:
+    now = datetime.now(UTC)
+    return WorkspaceDirectory(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        name="Policies",
+        path="policies",
+        description="Policy documents",
+        sort_order=10,
         created_at=now,
         updated_at=now,
     )
@@ -387,6 +402,138 @@ def test_remove_workspace_member_rejects_workspace_owner_at_api_boundary(
     assert "owner membership" in response.json()["message"]
 
 
+def test_list_workspace_directories_returns_404_for_non_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> None:
+        return None
+
+    async def fake_list_workspace_directories(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+    ) -> list[WorkspaceDirectory]:
+        pytest.fail("directories must not be listed when workspace access is denied")
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "list_workspace_directories",
+        fake_list_workspace_directories,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/workspaces/{workspace_id}/directories")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace not found"
+
+
+def test_create_workspace_directory_uses_write_roles_and_returns_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = make_user("owner@example.com")
+    workspace = make_workspace(owner.id)
+    directory = make_directory(workspace.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert workspace_id == workspace.id
+        assert user_id == owner.id
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_create_workspace_directory(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        directory_create: object,
+    ) -> WorkspaceDirectory:
+        assert workspace_id == workspace.id
+        return directory
+
+    async def fake_create_audit_log(*args: object, **kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "create_workspace_directory",
+        fake_create_workspace_directory,
+    )
+    monkeypatch.setattr(workspace_endpoints, "create_audit_log", fake_create_audit_log)
+    set_overrides(owner)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/directories",
+            json={"name": "Policies", "path": "policies", "sort_order": 10},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["workspace_id"] == str(workspace.id)
+    assert body["data"]["path"] == "policies"
+
+
+def test_read_workspace_directory_returns_404_for_cross_workspace_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    directory_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_directory(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        directory_id: uuid.UUID,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "get_workspace_directory",
+        fake_get_workspace_directory,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/workspaces/{workspace.id}/directories/{directory_id}")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace directory not found"
+
+
 def test_workspace_template_routes_require_authentication() -> None:
     clear_overrides()
     client = TestClient(app)
@@ -404,5 +551,6 @@ def test_workspace_routes_are_registered_in_openapi() -> None:
     paths = client.get("/openapi.json").json()["paths"]
 
     assert "/api/v1/workspaces" in paths
+    assert "/api/v1/workspaces/{workspace_id}/directories" in paths
     assert "/api/v1/workspaces/{workspace_id}/members" in paths
     assert "/api/v1/workspace-templates" in paths
