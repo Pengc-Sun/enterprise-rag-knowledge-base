@@ -21,6 +21,7 @@ from backend.app.schemas.analysis import (
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.analysis_tasks import (
+    ReviewDecisionValidationError,
     create_analysis_result_for_task,
     create_review_decision_for_result,
     create_workspace_analysis_task,
@@ -232,13 +233,16 @@ async def create_review_decision_endpoint(
         analysis_task_id,
         analysis_result_id,
     )
-    review_decision = await create_review_decision_for_result(
-        session,
-        workspace_id,
-        analysis_result,
-        current_user.id,
-        decision_create,
-    )
+    try:
+        review_decision = await create_review_decision_for_result(
+            session,
+            workspace_id,
+            analysis_result,
+            current_user.id,
+            decision_create,
+        )
+    except ReviewDecisionValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return success_response(
         ReviewDecisionRead.model_validate(review_decision),
         message="review decision created",

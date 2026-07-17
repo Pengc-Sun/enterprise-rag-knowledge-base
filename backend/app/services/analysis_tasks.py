@@ -13,6 +13,7 @@ from backend.app.models.analysis import (
     AnalysisTask,
     AnalysisTaskStatus,
     ReviewDecision,
+    ReviewDecisionType,
 )
 from backend.app.models.document import DocumentChunk
 from backend.app.schemas.analysis import (
@@ -57,6 +58,10 @@ class AnalysisOutputValidationError(LLMProviderResponseError):
 
 class AnalysisCitationValidationError(AnalysisOutputValidationError):
     message = "AI analysis output citations were missing or invalid"
+
+
+class ReviewDecisionValidationError(ValueError):
+    message = "Review decision payload is invalid"
 
 
 async def list_workspace_analysis_tasks(
@@ -202,19 +207,41 @@ async def create_review_decision_for_result(
     reviewer_id: uuid.UUID,
     decision_create: ReviewDecisionCreate,
 ) -> ReviewDecision:
+    original_result = deepcopy(analysis_result.result)
+    apply_review_decision_to_result(analysis_result, decision_create)
     review_decision = ReviewDecision(
         workspace_id=workspace_id,
         analysis_result_id=analysis_result.id,
         reviewer_id=reviewer_id,
         decision=decision_create.decision.value,
         comment=decision_create.comment,
-        original_result=analysis_result.result,
+        original_result=original_result,
         edited_result=decision_create.edited_result,
     )
     session.add(review_decision)
     await session.commit()
     await session.refresh(review_decision)
     return review_decision
+
+
+def apply_review_decision_to_result(
+    analysis_result: AnalysisResult,
+    decision_create: ReviewDecisionCreate,
+) -> None:
+    if decision_create.decision == ReviewDecisionType.APPROVE:
+        analysis_result.status = AnalysisResultStatus.APPROVED.value
+        return
+    if decision_create.decision == ReviewDecisionType.EDIT:
+        if decision_create.edited_result is None:
+            raise ReviewDecisionValidationError("edited_result is required for edit decisions")
+        analysis_result.result = decision_create.edited_result
+        analysis_result.status = AnalysisResultStatus.EDITED.value
+        return
+    if decision_create.decision == ReviewDecisionType.REJECT:
+        analysis_result.status = AnalysisResultStatus.REJECTED.value
+        return
+    if decision_create.decision == ReviewDecisionType.REQUEST_CHANGES:
+        analysis_result.status = AnalysisResultStatus.NEEDS_REVIEW.value
 
 
 async def execute_analysis_task(

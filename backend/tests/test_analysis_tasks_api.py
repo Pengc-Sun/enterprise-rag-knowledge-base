@@ -18,7 +18,10 @@ from backend.app.models.analysis import (
 )
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
-from backend.app.services.analysis_tasks import AnalysisOutputValidationError
+from backend.app.services.analysis_tasks import (
+    AnalysisOutputValidationError,
+    ReviewDecisionValidationError,
+)
 from backend.app.services.llms import LLMProviderTimeoutError
 
 
@@ -597,6 +600,82 @@ def test_create_review_decision_returns_created_decision(
     assert body["data"]["analysis_result_id"] == str(result.id)
     assert body["data"]["decision"] == "approve"
     assert body["data"]["reviewer_id"] == str(user.id)
+
+
+def test_create_review_decision_returns_400_for_invalid_action_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+    result = make_result(workspace.id, task.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        return task
+
+    async def fake_get_analysis_result_for_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+        analysis_result_id: uuid.UUID,
+    ) -> AnalysisResult:
+        return result
+
+    async def fake_create_review_decision_for_result(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_result: AnalysisResult,
+        reviewer_id: uuid.UUID,
+        decision_create: object,
+    ) -> ReviewDecision:
+        raise ReviewDecisionValidationError("edited_result is required for edit decisions")
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_analysis_result_for_task",
+        fake_get_analysis_result_for_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "create_review_decision_for_result",
+        fake_create_review_decision_for_result,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/{task.id}"
+            f"/results/{result.id}/review-decisions",
+            json={"decision": "edit"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "edited_result is required for edit decisions"
 
 
 def test_list_review_decisions_returns_decisions(

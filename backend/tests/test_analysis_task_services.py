@@ -22,6 +22,7 @@ from backend.app.schemas.analysis import (
 from backend.app.services.analysis_tasks import (
     AnalysisCitationValidationError,
     AnalysisOutputValidationError,
+    ReviewDecisionValidationError,
     build_analysis_context_statement,
     build_deterministic_structured_analysis_result,
     build_structured_analysis_messages,
@@ -370,8 +371,113 @@ async def test_create_review_decision_for_result_snapshots_original_result() -> 
     assert decision.comment == "Evidence is sufficient."
     assert decision.original_result == result.result
     assert decision.edited_result is None
+    assert result.status == AnalysisResultStatus.APPROVED.value
     assert session.added is decision
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_review_decision_for_result_applies_edit() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+    result.result = {"requirements": [{"requirement": "Submit receipts"}]}
+    edited_result: dict[str, object] = {
+        "requirements": [{"requirement": "Submit itemized receipts"}]
+    }
+    session = FakeSession()
+
+    decision = await create_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        result,
+        reviewer_id,
+        ReviewDecisionCreate(
+            decision=ReviewDecisionType.EDIT,
+            comment="Clarified evidence wording.",
+            edited_result=edited_result,
+        ),
+    )
+
+    assert result.status == AnalysisResultStatus.EDITED.value
+    assert result.result == edited_result
+    assert decision.original_result == {"requirements": [{"requirement": "Submit receipts"}]}
+    assert decision.edited_result == edited_result
+
+
+@pytest.mark.asyncio
+async def test_create_review_decision_for_result_rejects_result() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+    session = FakeSession()
+
+    decision = await create_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        result,
+        reviewer_id,
+        ReviewDecisionCreate(
+            decision=ReviewDecisionType.REJECT,
+            comment="Evidence does not support the claim.",
+        ),
+    )
+
+    assert result.status == AnalysisResultStatus.REJECTED.value
+    assert decision.decision == ReviewDecisionType.REJECT.value
+
+
+@pytest.mark.asyncio
+async def test_create_review_decision_for_result_requests_changes() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    result.status = AnalysisResultStatus.APPROVED.value
+    session = FakeSession()
+
+    decision = await create_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        result,
+        reviewer_id,
+        ReviewDecisionCreate(
+            decision=ReviewDecisionType.REQUEST_CHANGES,
+            comment="Add citation from the latest policy.",
+        ),
+    )
+
+    assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
+    assert decision.decision == ReviewDecisionType.REQUEST_CHANGES.value
+
+
+@pytest.mark.asyncio
+async def test_create_review_decision_for_result_requires_edit_payload() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+    original_result = result.result
+    session = FakeSession()
+
+    with pytest.raises(ReviewDecisionValidationError):
+        await create_review_decision_for_result(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            result,
+            reviewer_id,
+            ReviewDecisionCreate(decision=ReviewDecisionType.EDIT),
+        )
+
+    assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
+    assert result.result == original_result
+    assert session.added is None
+    assert session.committed is False
 
 
 @pytest.mark.asyncio
