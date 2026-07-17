@@ -1,5 +1,6 @@
 import json
 import uuid
+from typing import cast
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,15 +25,26 @@ from backend.app.services.llms import (
 DEFAULT_ANALYSIS_CONTEXT_LIMIT = 8
 LOCAL_ANALYSIS_PROVIDER = "local"
 LOCAL_ANALYSIS_MODEL = "workspace-scoped-retrieval"
+JSON_SCHEMA_TYPE_MAP = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+}
 STRUCTURED_ANALYSIS_SYSTEM_PROMPT = """\
 You are an enterprise document analysis engine.
 Return only valid JSON. Do not include Markdown fences, prose, or comments.
+The response must conform to the expected output schema supplied by the user.
 The JSON object must include:
 - summary: string
 - findings: array of structured finding objects
 - citations: array of citation objects referencing provided chunk_id values
 - confidence: number between 0 and 1, or null
 """
+
+
+class AnalysisOutputValidationError(LLMProviderResponseError):
+    message = "AI analysis output did not match the task schema"
 
 
 async def list_workspace_analysis_tasks(
@@ -152,12 +164,18 @@ async def execute_analysis_task(
     if llm_provider is None or isinstance(llm_provider, DeterministicLLMProvider):
         return await create_local_analysis_result(session, task, chunks)
 
-    response = await llm_provider.generate(
-        build_structured_analysis_messages(task, chunks),
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    structured_result = parse_structured_analysis_response(response.content)
+    try:
+        response = await llm_provider.generate(
+            build_structured_analysis_messages(task, chunks),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        structured_result = parse_structured_analysis_response(response.content)
+        validate_structured_analysis_result(structured_result, task.output_schema)
+    except LLMProviderResponseError:
+        task.status = AnalysisTaskStatus.FAILED.value
+        await session.commit()
+        raise
     analysis_result = AnalysisResult(
         workspace_id=task.workspace_id,
         analysis_task_id=task.id,
@@ -264,6 +282,144 @@ def parse_structured_analysis_response(content: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise LLMProviderResponseError
     return parsed
+
+
+def validate_structured_analysis_result(
+    structured_result: dict[str, object],
+    output_schema: dict[str, object],
+) -> None:
+    if not output_schema:
+        return
+    validate_json_schema_value(structured_result, output_schema, "$")
+
+
+def validate_json_schema_value(value: object, schema: dict[str, object], path: str) -> None:
+    schema_type = schema.get("type")
+    if schema_type is not None:
+        validate_json_schema_type(value, schema_type, path)
+
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and value not in enum_values:
+        raise AnalysisOutputValidationError(f"{path} must be one of the allowed enum values")
+
+    const_value = schema.get("const")
+    if "const" in schema and value != const_value:
+        raise AnalysisOutputValidationError(f"{path} must equal the schema const value")
+
+    if isinstance(value, dict):
+        validate_json_object_schema(value, schema, path)
+    elif isinstance(value, list):
+        validate_json_array_schema(value, schema, path)
+    elif isinstance(value, str):
+        validate_json_string_schema(value, schema, path)
+    elif is_json_number(value):
+        validate_json_number_schema(value, schema, path)
+
+
+def validate_json_schema_type(value: object, schema_type: object, path: str) -> None:
+    if isinstance(schema_type, list):
+        if any(is_json_schema_type(value, item) for item in schema_type):
+            return
+        allowed_types = ", ".join(str(item) for item in schema_type)
+        raise AnalysisOutputValidationError(f"{path} must match one of: {allowed_types}")
+
+    if isinstance(schema_type, str) and not is_json_schema_type(value, schema_type):
+        raise AnalysisOutputValidationError(f"{path} must be {schema_type}")
+
+
+def is_json_schema_type(value: object, schema_type: object) -> bool:
+    if not isinstance(schema_type, str):
+        return True
+    if schema_type == "null":
+        return value is None
+    if schema_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema_type == "number":
+        return is_json_number(value)
+
+    expected_type = JSON_SCHEMA_TYPE_MAP.get(schema_type)
+    if expected_type is None:
+        return True
+    return isinstance(value, expected_type)
+
+
+def validate_json_object_schema(
+    value: dict[object, object],
+    schema: dict[str, object],
+    path: str,
+) -> None:
+    required = schema.get("required")
+    if isinstance(required, list):
+        for key in required:
+            if isinstance(key, str) and key not in value:
+                raise AnalysisOutputValidationError(f"{path}.{key} is required")
+
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for key, property_schema in properties.items():
+            if not isinstance(key, str) or key not in value:
+                continue
+            if isinstance(property_schema, dict):
+                validate_json_schema_value(value[key], property_schema, f"{path}.{key}")
+
+
+def validate_json_array_schema(
+    value: list[object],
+    schema: dict[str, object],
+    path: str,
+) -> None:
+    min_items = schema.get("minItems")
+    if isinstance(min_items, int) and len(value) < min_items:
+        raise AnalysisOutputValidationError(f"{path} must contain at least {min_items} item(s)")
+
+    max_items = schema.get("maxItems")
+    if isinstance(max_items, int) and len(value) > max_items:
+        raise AnalysisOutputValidationError(f"{path} must contain at most {max_items} item(s)")
+
+    items_schema = schema.get("items")
+    if isinstance(items_schema, dict):
+        for index, item in enumerate(value):
+            validate_json_schema_value(item, items_schema, f"{path}[{index}]")
+
+
+def validate_json_string_schema(
+    value: str,
+    schema: dict[str, object],
+    path: str,
+) -> None:
+    min_length = schema.get("minLength")
+    if isinstance(min_length, int) and len(value) < min_length:
+        raise AnalysisOutputValidationError(
+            f"{path} must contain at least {min_length} character(s)"
+        )
+
+    max_length = schema.get("maxLength")
+    if isinstance(max_length, int) and len(value) > max_length:
+        raise AnalysisOutputValidationError(
+            f"{path} must contain at most {max_length} character(s)"
+        )
+
+
+def validate_json_number_schema(
+    value: object,
+    schema: dict[str, object],
+    path: str,
+) -> None:
+    if not is_json_number(value):
+        return
+
+    number_value = cast(int | float, value)
+    minimum = schema.get("minimum")
+    if isinstance(minimum, int | float) and number_value < minimum:
+        raise AnalysisOutputValidationError(f"{path} must be greater than or equal to {minimum}")
+
+    maximum = schema.get("maximum")
+    if isinstance(maximum, int | float) and number_value > maximum:
+        raise AnalysisOutputValidationError(f"{path} must be less than or equal to {maximum}")
+
+
+def is_json_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def extract_structured_analysis_citations(

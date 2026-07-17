@@ -13,6 +13,7 @@ from backend.app.models.analysis import (
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
 from backend.app.services.analysis_tasks import (
+    AnalysisOutputValidationError,
     build_analysis_context_statement,
     build_structured_analysis_messages,
     create_analysis_result_for_task,
@@ -23,6 +24,7 @@ from backend.app.services.analysis_tasks import (
     list_analysis_results_for_task,
     list_workspace_analysis_tasks,
     parse_structured_analysis_response,
+    validate_structured_analysis_result,
 )
 from backend.app.services.llms import (
     LLMMessage,
@@ -348,6 +350,75 @@ def test_parse_structured_analysis_response_rejects_malformed_output(content: st
         parse_structured_analysis_response(content)
 
 
+def test_validate_structured_analysis_result_accepts_matching_schema() -> None:
+    result: dict[str, object] = {
+        "requirements": [
+            {
+                "requirement": "Submit receipts",
+                "evidence_required": "Itemized receipt",
+                "priority": "high",
+            }
+        ],
+        "citations": ["chunk-1"],
+    }
+    schema: dict[str, object] = {
+        "type": "object",
+        "required": ["requirements", "citations"],
+        "properties": {
+            "requirements": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["requirement", "evidence_required"],
+                    "properties": {
+                        "requirement": {"type": "string", "minLength": 1},
+                        "evidence_required": {"type": "string"},
+                        "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+                    },
+                },
+            },
+            "citations": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+    }
+
+    validate_structured_analysis_result(result, schema)
+
+
+def test_validate_structured_analysis_result_rejects_schema_mismatch() -> None:
+    result: dict[str, object] = {
+        "requirements": [{"requirement": "Submit receipts"}],
+        "citations": [{"chunk_id": "chunk-1"}],
+    }
+    schema: dict[str, object] = {
+        "type": "object",
+        "required": ["requirements", "citations"],
+        "properties": {
+            "requirements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["requirement", "evidence_required"],
+                    "properties": {
+                        "requirement": {"type": "string"},
+                        "evidence_required": {"type": "string"},
+                    },
+                },
+            },
+            "citations": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+    }
+
+    with pytest.raises(AnalysisOutputValidationError):
+        validate_structured_analysis_result(result, schema)
+
+
 @pytest.mark.asyncio
 async def test_execute_analysis_task_retrieves_workspace_chunks_and_creates_result() -> None:
     workspace_id = uuid.uuid4()
@@ -411,3 +482,46 @@ async def test_execute_analysis_task_persists_structured_llm_json_result() -> No
     assert llm_provider.max_tokens == 512
     assert "Return only valid JSON" in llm_provider.messages[0].content
     assert session.added is result
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_rejects_schema_mismatch_without_result() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    task.output_schema = {
+        "type": "object",
+        "required": ["requirements", "citations"],
+        "properties": {
+            "requirements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["requirement", "evidence_required"],
+                    "properties": {
+                        "requirement": {"type": "string"},
+                        "evidence_required": {"type": "string"},
+                    },
+                },
+            },
+            "citations": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    response_payload = {
+        "requirements": [{"requirement": "Submit receipts"}],
+        "citations": ["chunk-1"],
+    }
+    llm_provider = FakeStructuredLLMProvider(json.dumps(response_payload))
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    with pytest.raises(AnalysisOutputValidationError):
+        await execute_analysis_task(
+            session,  # type: ignore[arg-type]
+            task,
+            llm_provider=llm_provider,
+        )
+
+    assert task.status == AnalysisTaskStatus.FAILED.value
+    assert session.added is None
+    assert session.committed is True
