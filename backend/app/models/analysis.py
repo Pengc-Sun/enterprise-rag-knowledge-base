@@ -26,6 +26,13 @@ class AnalysisResultStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class ReviewDecisionType(StrEnum):
+    APPROVE = "approve"
+    EDIT = "edit"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+
+
 class AnalysisTask(Base):
     __tablename__ = "analysis_tasks"
 
@@ -111,3 +118,41 @@ class AnalysisResult(Base):
         nullable=False,
     )
     analysis_task: Mapped[AnalysisTask] = relationship(back_populates="results")
+    review_decisions: Mapped[list[ReviewDecision]] = relationship(
+        back_populates="analysis_result",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReviewDecision(Base):
+    __tablename__ = "review_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    analysis_result_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("analysis_results.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    decision: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    original_result: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict, nullable=False)
+    edited_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    analysis_result: Mapped[AnalysisResult] = relationship(back_populates="review_decisions")

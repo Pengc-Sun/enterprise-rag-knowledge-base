@@ -3,6 +3,8 @@ from backend.app.models.analysis import (
     AnalysisResultStatus,
     AnalysisTask,
     AnalysisTaskStatus,
+    ReviewDecision,
+    ReviewDecisionType,
 )
 from backend.app.models.audit import AuditAction, AuditLog, AuditResourceType
 from backend.app.models.conversation import Conversation, Message, MessageRole
@@ -36,6 +38,8 @@ __all__ = [
     "AnalysisResultStatus",
     "AnalysisTask",
     "AnalysisTaskStatus",
+    "ReviewDecision",
+    "ReviewDecisionType",
     "AuditLog",
     "AuditResourceType",
     "MessageRole",

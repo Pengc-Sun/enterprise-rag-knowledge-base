@@ -10,7 +10,12 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import analysis_tasks as analysis_task_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
-from backend.app.models.analysis import AnalysisResult, AnalysisTask
+from backend.app.models.analysis import (
+    AnalysisResult,
+    AnalysisTask,
+    ReviewDecision,
+    ReviewDecisionType,
+)
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
 from backend.app.services.analysis_tasks import AnalysisOutputValidationError
@@ -76,6 +81,25 @@ def make_result(workspace_id: uuid.UUID, task_id: uuid.UUID) -> AnalysisResult:
         token_usage={"total_tokens": 10},
         created_at=now,
         updated_at=now,
+    )
+
+
+def make_review_decision(
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+) -> ReviewDecision:
+    now = datetime.now(UTC)
+    return ReviewDecision(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        analysis_result_id=analysis_result_id,
+        reviewer_id=reviewer_id,
+        decision=ReviewDecisionType.APPROVE.value,
+        comment="Looks correct.",
+        original_result={"requirements": []},
+        edited_result=None,
+        created_at=now,
     )
 
 
@@ -491,6 +515,166 @@ def test_run_analysis_task_maps_provider_timeout(
     assert response.json()["message"] == "LLM provider request timed out"
 
 
+def test_create_review_decision_returns_created_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+    result = make_result(workspace.id, task.id)
+    decision = make_review_decision(workspace.id, result.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        return task
+
+    async def fake_get_analysis_result_for_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+        analysis_result_id: uuid.UUID,
+    ) -> AnalysisResult:
+        return result
+
+    async def fake_create_review_decision_for_result(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_result: AnalysisResult,
+        reviewer_id: uuid.UUID,
+        decision_create: object,
+    ) -> ReviewDecision:
+        assert workspace_id == workspace.id
+        assert analysis_result is result
+        assert reviewer_id == user.id
+        return decision
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_analysis_result_for_task",
+        fake_get_analysis_result_for_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "create_review_decision_for_result",
+        fake_create_review_decision_for_result,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/{task.id}"
+            f"/results/{result.id}/review-decisions",
+            json={"decision": "approve", "comment": "Looks correct."},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["message"] == "review decision created"
+    assert body["data"]["analysis_result_id"] == str(result.id)
+    assert body["data"]["decision"] == "approve"
+    assert body["data"]["reviewer_id"] == str(user.id)
+
+
+def test_list_review_decisions_returns_decisions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+    result = make_result(workspace.id, task.id)
+    decision = make_review_decision(workspace.id, result.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        return task
+
+    async def fake_get_analysis_result_for_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+        analysis_result_id: uuid.UUID,
+    ) -> AnalysisResult:
+        return result
+
+    async def fake_list_review_decisions_for_result(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_result_id: uuid.UUID,
+    ) -> list[ReviewDecision]:
+        return [decision]
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_analysis_result_for_task",
+        fake_get_analysis_result_for_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "list_review_decisions_for_result",
+        fake_list_review_decisions_for_result,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/{task.id}"
+            f"/results/{result.id}/review-decisions"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"][0]["id"] == str(decision.id)
+    assert body["data"][0]["decision"] == "approve"
+
+
 def test_analysis_task_routes_are_registered_in_openapi() -> None:
     clear_overrides()
     client = TestClient(app)
@@ -501,3 +685,7 @@ def test_analysis_task_routes_are_registered_in_openapi() -> None:
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/run" in paths
     assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/results" in paths
+    assert (
+        "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/results/"
+        "{analysis_result_id}/review-decisions"
+    ) in paths

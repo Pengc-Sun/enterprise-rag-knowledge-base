@@ -5,6 +5,8 @@ from backend.app.models.analysis import (
     AnalysisResultStatus,
     AnalysisTask,
     AnalysisTaskStatus,
+    ReviewDecision,
+    ReviewDecisionType,
 )
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 
@@ -22,6 +24,10 @@ def test_analysis_result_status_values() -> None:
     assert AnalysisResultStatus.APPROVED.value == "approved"
     assert AnalysisResultStatus.EDITED.value == "edited"
     assert AnalysisResultStatus.REJECTED.value == "rejected"
+    assert ReviewDecisionType.APPROVE.value == "approve"
+    assert ReviewDecisionType.EDIT.value == "edit"
+    assert ReviewDecisionType.REJECT.value == "reject"
+    assert ReviewDecisionType.REQUEST_CHANGES.value == "request_changes"
 
 
 def test_report_status_values() -> None:
@@ -81,6 +87,41 @@ def test_analysis_result_relationship() -> None:
     assert result in task.results
     assert result.status == "ai_generated"
     assert result.citations == [{"document": "policy.md", "page": 1}]
+
+
+def test_review_decision_relationship() -> None:
+    workspace_id = uuid.uuid4()
+    task = AnalysisTask(
+        workspace_id=workspace_id,
+        template_task_key="policy_requirements",
+        name="Policy Requirement Extraction",
+        task_type="extraction",
+        status=AnalysisTaskStatus.PENDING.value,
+        input_scope={},
+        output_schema={"type": "object"},
+        created_by=uuid.uuid4(),
+    )
+    result = AnalysisResult(
+        workspace_id=workspace_id,
+        analysis_task=task,
+        status=AnalysisResultStatus.NEEDS_REVIEW.value,
+        result={"requirements": []},
+        citations=[],
+        token_usage={},
+    )
+    decision = ReviewDecision(
+        workspace_id=workspace_id,
+        analysis_result=result,
+        reviewer_id=uuid.uuid4(),
+        decision=ReviewDecisionType.APPROVE.value,
+        comment="Looks correct.",
+        original_result=result.result,
+        edited_result=None,
+    )
+
+    assert decision.analysis_result is result
+    assert decision in result.review_decisions
+    assert decision.original_result == {"requirements": []}
 
 
 def test_report_section_relationship() -> None:

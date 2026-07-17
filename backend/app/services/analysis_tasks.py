@@ -12,9 +12,14 @@ from backend.app.models.analysis import (
     AnalysisResultStatus,
     AnalysisTask,
     AnalysisTaskStatus,
+    ReviewDecision,
 )
 from backend.app.models.document import DocumentChunk
-from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
+from backend.app.schemas.analysis import (
+    AnalysisResultCreate,
+    AnalysisTaskCreate,
+    ReviewDecisionCreate,
+)
 from backend.app.services.llms import (
     DeterministicLLMProvider,
     LLMMessage,
@@ -156,6 +161,60 @@ async def create_analysis_result_for_task(
     await session.commit()
     await session.refresh(analysis_result)
     return analysis_result
+
+
+async def list_review_decisions_for_result(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+) -> list[ReviewDecision]:
+    result = await session.execute(
+        select(ReviewDecision)
+        .where(
+            ReviewDecision.workspace_id == workspace_id,
+            ReviewDecision.analysis_result_id == analysis_result_id,
+        )
+        .order_by(ReviewDecision.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_review_decision_for_result(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    review_decision_id: uuid.UUID,
+) -> ReviewDecision | None:
+    result = await session.execute(
+        select(ReviewDecision).where(
+            ReviewDecision.id == review_decision_id,
+            ReviewDecision.workspace_id == workspace_id,
+            ReviewDecision.analysis_result_id == analysis_result_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_review_decision_for_result(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    analysis_result: AnalysisResult,
+    reviewer_id: uuid.UUID,
+    decision_create: ReviewDecisionCreate,
+) -> ReviewDecision:
+    review_decision = ReviewDecision(
+        workspace_id=workspace_id,
+        analysis_result_id=analysis_result.id,
+        reviewer_id=reviewer_id,
+        decision=decision_create.decision.value,
+        comment=decision_create.comment,
+        original_result=analysis_result.result,
+        edited_result=decision_create.edited_result,
+    )
+    session.add(review_decision)
+    await session.commit()
+    await session.refresh(review_decision)
+    return review_decision
 
 
 async def execute_analysis_task(

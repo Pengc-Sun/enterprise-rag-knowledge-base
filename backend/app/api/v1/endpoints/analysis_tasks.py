@@ -8,7 +8,7 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.errors import provider_exception_to_http
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
-from backend.app.models.analysis import AnalysisResult, AnalysisTask
+from backend.app.models.analysis import AnalysisResult, AnalysisTask, ReviewDecision
 from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.analysis import (
@@ -16,15 +16,20 @@ from backend.app.schemas.analysis import (
     AnalysisResultRead,
     AnalysisTaskCreate,
     AnalysisTaskRead,
+    ReviewDecisionCreate,
+    ReviewDecisionRead,
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.analysis_tasks import (
     create_analysis_result_for_task,
+    create_review_decision_for_result,
     create_workspace_analysis_task,
     execute_analysis_task,
     get_analysis_result_for_task,
+    get_review_decision_for_result,
     get_workspace_analysis_task,
     list_analysis_results_for_task,
+    list_review_decisions_for_result,
     list_workspace_analysis_tasks,
 )
 from backend.app.services.llms import LLMProviderError, create_llm_provider
@@ -177,6 +182,98 @@ async def read_analysis_result_endpoint(
     return success_response(AnalysisResultRead.model_validate(analysis_result))
 
 
+@router.get(
+    "/{analysis_task_id}/results/{analysis_result_id}/review-decisions",
+    response_model=APIResponse[list[ReviewDecisionRead]],
+)
+async def list_review_decisions_endpoint(
+    workspace_id: uuid.UUID,
+    analysis_task_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[ReviewDecisionRead]]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
+    await get_analysis_result_or_404(
+        session,
+        workspace_id,
+        analysis_task_id,
+        analysis_result_id,
+    )
+    review_decisions = await list_review_decisions_for_result(
+        session,
+        workspace_id,
+        analysis_result_id,
+    )
+    return success_response(
+        [ReviewDecisionRead.model_validate(decision) for decision in review_decisions]
+    )
+
+
+@router.post(
+    "/{analysis_task_id}/results/{analysis_result_id}/review-decisions",
+    response_model=APIResponse[ReviewDecisionRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_review_decision_endpoint(
+    workspace_id: uuid.UUID,
+    analysis_task_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    decision_create: ReviewDecisionCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReviewDecisionRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
+    analysis_result = await get_analysis_result_or_404(
+        session,
+        workspace_id,
+        analysis_task_id,
+        analysis_result_id,
+    )
+    review_decision = await create_review_decision_for_result(
+        session,
+        workspace_id,
+        analysis_result,
+        current_user.id,
+        decision_create,
+    )
+    return success_response(
+        ReviewDecisionRead.model_validate(review_decision),
+        message="review decision created",
+    )
+
+
+@router.get(
+    "/{analysis_task_id}/results/{analysis_result_id}/review-decisions/{review_decision_id}",
+    response_model=APIResponse[ReviewDecisionRead],
+)
+async def read_review_decision_endpoint(
+    workspace_id: uuid.UUID,
+    analysis_task_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    review_decision_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReviewDecisionRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
+    await get_analysis_result_or_404(
+        session,
+        workspace_id,
+        analysis_task_id,
+        analysis_result_id,
+    )
+    review_decision = await get_review_decision_or_404(
+        session,
+        workspace_id,
+        analysis_result_id,
+        review_decision_id,
+    )
+    return success_response(ReviewDecisionRead.model_validate(review_decision))
+
+
 async def get_workspace_or_404(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -224,3 +321,23 @@ async def get_analysis_result_or_404(
             detail="Analysis result not found",
         )
     return analysis_result
+
+
+async def get_review_decision_or_404(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    review_decision_id: uuid.UUID,
+) -> ReviewDecision:
+    review_decision = await get_review_decision_for_result(
+        session,
+        workspace_id,
+        analysis_result_id,
+        review_decision_id,
+    )
+    if review_decision is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review decision not found",
+        )
+    return review_decision

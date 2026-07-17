@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.models.analysis import AnalysisResultStatus, AnalysisTaskStatus
+from backend.app.models.analysis import AnalysisResultStatus, AnalysisTaskStatus, ReviewDecisionType
 
 
 class AnalysisTaskBase(BaseModel):
@@ -53,3 +53,23 @@ class AnalysisResultRead(AnalysisResultBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class ReviewDecisionBase(BaseModel):
+    decision: ReviewDecisionType
+    comment: str | None = Field(default=None, max_length=5000)
+    edited_result: dict[str, object] | None = None
+
+
+class ReviewDecisionCreate(ReviewDecisionBase):
+    pass
+
+
+class ReviewDecisionRead(ReviewDecisionBase):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    analysis_result_id: uuid.UUID
+    reviewer_id: uuid.UUID | None
+    original_result: dict[str, object]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

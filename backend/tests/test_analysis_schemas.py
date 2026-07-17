@@ -1,8 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.app.models.analysis import AnalysisResultStatus
-from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
+from backend.app.models.analysis import AnalysisResultStatus, ReviewDecisionType
+from backend.app.schemas.analysis import (
+    AnalysisResultCreate,
+    AnalysisTaskCreate,
+    ReviewDecisionCreate,
+)
 
 
 def test_analysis_task_create_accepts_structured_payload() -> None:
@@ -38,3 +42,20 @@ def test_analysis_result_create_rejects_invalid_confidence() -> None:
     with pytest.raises(ValidationError):
         AnalysisResultCreate(result={}, confidence=1.5)
 
+
+def test_review_decision_create_accepts_edit_payload() -> None:
+    decision = ReviewDecisionCreate(
+        decision=ReviewDecisionType.EDIT,
+        comment="Clarify the requirement.",
+        edited_result={"requirements": [{"requirement": "Submit itemized receipts"}]},
+    )
+
+    assert decision.decision == ReviewDecisionType.EDIT
+    assert decision.edited_result == {
+        "requirements": [{"requirement": "Submit itemized receipts"}]
+    }
+
+
+def test_review_decision_create_rejects_unknown_decision() -> None:
+    with pytest.raises(ValidationError):
+        ReviewDecisionCreate.model_validate({"decision": "unknown"})

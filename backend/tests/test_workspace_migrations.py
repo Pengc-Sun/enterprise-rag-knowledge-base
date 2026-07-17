@@ -249,3 +249,28 @@ def test_day29_analysis_results_migration_creates_workspace_scoped_results() -> 
     assert "fk_analysis_results_analysis_task_id_analysis_tasks" in source
     assert "ix_analysis_results_workspace_id" in source
     assert "ix_analysis_results_analysis_task_id" in source
+
+
+def test_day36_review_decisions_migration_creates_review_audit_table() -> None:
+    migration = load_migration(
+        "migration_0023",
+        "20260717_0023_create_review_decisions_table.py",
+    )
+
+    assert migration.revision == "0023"
+    assert migration.down_revision == "0022"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"review_decisions"' in source
+    assert '"analysis_result_id"' in source
+    assert '"reviewer_id"' in source
+    assert '"decision"' in source
+    assert '"comment"' in source
+    assert '"original_result"' in source
+    assert '"edited_result"' in source
+    assert "fk_review_decisions_workspace_id_workspaces" in source
+    assert "fk_review_decisions_analysis_result_id_analysis_results" in source
+    assert "fk_review_decisions_reviewer_id_users" in source
+    assert "ix_review_decisions_workspace_id" in source
+    assert "ix_review_decisions_analysis_result_id" in source

@@ -10,9 +10,15 @@ from backend.app.models.analysis import (
     AnalysisResultStatus,
     AnalysisTask,
     AnalysisTaskStatus,
+    ReviewDecision,
+    ReviewDecisionType,
 )
 from backend.app.models.document import Document, DocumentChunk
-from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
+from backend.app.schemas.analysis import (
+    AnalysisResultCreate,
+    AnalysisTaskCreate,
+    ReviewDecisionCreate,
+)
 from backend.app.services.analysis_tasks import (
     AnalysisCitationValidationError,
     AnalysisOutputValidationError,
@@ -20,11 +26,14 @@ from backend.app.services.analysis_tasks import (
     build_deterministic_structured_analysis_result,
     build_structured_analysis_messages,
     create_analysis_result_for_task,
+    create_review_decision_for_result,
     create_workspace_analysis_task,
     execute_analysis_task,
     get_analysis_result_for_task,
+    get_review_decision_for_result,
     get_workspace_analysis_task,
     list_analysis_results_for_task,
+    list_review_decisions_for_result,
     list_workspace_analysis_tasks,
     normalize_structured_analysis_output,
     parse_structured_analysis_response,
@@ -76,7 +85,10 @@ class FakeSession:
 
     def add(self, instance: object) -> None:
         self.added = instance
-        if isinstance(instance, (AnalysisTask, AnalysisResult)) and instance.id is None:
+        if (
+            isinstance(instance, (AnalysisTask, AnalysisResult, ReviewDecision))
+            and instance.id is None
+        ):
             instance.id = uuid.uuid4()
 
     async def commit(self) -> None:
@@ -151,6 +163,24 @@ def make_result(workspace_id: uuid.UUID, task_id: uuid.UUID) -> AnalysisResult:
         token_usage={},
         created_at=now,
         updated_at=now,
+    )
+
+
+def make_review_decision(
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+) -> ReviewDecision:
+    now = datetime.now(UTC)
+    return ReviewDecision(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        analysis_result_id=analysis_result_id,
+        reviewer_id=uuid.uuid4(),
+        decision=ReviewDecisionType.APPROVE.value,
+        comment="Looks correct.",
+        original_result={"requirements": []},
+        edited_result=None,
+        created_at=now,
     )
 
 
@@ -310,6 +340,72 @@ async def test_get_analysis_result_for_task_returns_result() -> None:
     )
 
     assert fetched is result
+    assert session.statements
+
+
+@pytest.mark.asyncio
+async def test_create_review_decision_for_result_snapshots_original_result() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    result.result = {"requirements": [{"requirement": "Submit receipts"}]}
+    session = FakeSession()
+
+    decision = await create_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        result,
+        reviewer_id,
+        ReviewDecisionCreate(
+            decision=ReviewDecisionType.APPROVE,
+            comment="Evidence is sufficient.",
+        ),
+    )
+
+    assert decision.workspace_id == workspace_id
+    assert decision.analysis_result_id == result.id
+    assert decision.reviewer_id == reviewer_id
+    assert decision.decision == ReviewDecisionType.APPROVE.value
+    assert decision.comment == "Evidence is sufficient."
+    assert decision.original_result == result.result
+    assert decision.edited_result is None
+    assert session.added is decision
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_list_review_decisions_for_result_returns_decisions() -> None:
+    workspace_id = uuid.uuid4()
+    analysis_result_id = uuid.uuid4()
+    decision = make_review_decision(workspace_id, analysis_result_id)
+    session = FakeSession([FakeResult(items=[decision])])
+
+    decisions = await list_review_decisions_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        analysis_result_id,
+    )
+
+    assert decisions == [decision]
+    assert session.statements
+
+
+@pytest.mark.asyncio
+async def test_get_review_decision_for_result_returns_decision() -> None:
+    workspace_id = uuid.uuid4()
+    analysis_result_id = uuid.uuid4()
+    decision = make_review_decision(workspace_id, analysis_result_id)
+    session = FakeSession([FakeResult(scalar=decision)])
+
+    fetched = await get_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        analysis_result_id,
+        decision.id,
+    )
+
+    assert fetched is decision
     assert session.statements
 
 
