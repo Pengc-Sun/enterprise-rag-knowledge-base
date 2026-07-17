@@ -34,6 +34,7 @@ from backend.app.services.llms import (
     DeterministicLLMProvider,
     LLMMessage,
     LLMProvider,
+    LLMProviderError,
     LLMProviderName,
     LLMProviderResponseError,
     LLMResponse,
@@ -108,6 +109,17 @@ class FakeStructuredLLMProvider(LLMProvider):
             provider=LLMProviderName.OPENAI,
             usage=LLMUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
+
+
+class FakeFailingLLMProvider(LLMProvider):
+    async def generate(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMResponse:
+        raise LLMProviderError("provider unavailable")
 
 
 def make_task(workspace_id: uuid.UUID | None = None) -> AnalysisTask:
@@ -645,6 +657,47 @@ async def test_execute_analysis_task_rejects_uncited_findings_without_result() -
             session,  # type: ignore[arg-type]
             task,
             llm_provider=llm_provider,
+        )
+
+    assert task.status == AnalysisTaskStatus.FAILED.value
+    assert session.added is None
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_rejects_malformed_json_without_result() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    llm_provider = FakeStructuredLLMProvider("not-json")
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    with pytest.raises(LLMProviderResponseError):
+        await execute_analysis_task(
+            session,  # type: ignore[arg-type]
+            task,
+            llm_provider=llm_provider,
+        )
+
+    assert task.status == AnalysisTaskStatus.FAILED.value
+    assert session.added is None
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_marks_provider_failure_failed_without_result() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    with pytest.raises(LLMProviderError):
+        await execute_analysis_task(
+            session,  # type: ignore[arg-type]
+            task,
+            llm_provider=FakeFailingLLMProvider(),
         )
 
     assert task.status == AnalysisTaskStatus.FAILED.value

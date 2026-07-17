@@ -19,6 +19,7 @@ from backend.app.services.llms import (
     DeterministicLLMProvider,
     LLMMessage,
     LLMProvider,
+    LLMProviderError,
     LLMProviderName,
     LLMProviderResponseError,
     LLMResponse,
@@ -199,7 +200,7 @@ async def execute_analysis_task(
             structured_result,
             chunks,
         )
-    except LLMProviderResponseError:
+    except LLMProviderError:
         task.status = AnalysisTaskStatus.FAILED.value
         await session.commit()
         raise

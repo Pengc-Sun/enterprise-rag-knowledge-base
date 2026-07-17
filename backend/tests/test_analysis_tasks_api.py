@@ -14,6 +14,7 @@ from backend.app.models.analysis import AnalysisResult, AnalysisTask
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
 from backend.app.services.analysis_tasks import AnalysisOutputValidationError
+from backend.app.services.llms import LLMProviderTimeoutError
 
 
 def make_user() -> User:
@@ -430,6 +431,64 @@ def test_run_analysis_task_returns_error_for_schema_mismatch(
 
     assert response.status_code == 400
     assert response.json()["message"] == "AI analysis output did not match the task schema"
+
+
+def test_run_analysis_task_maps_provider_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        return task
+
+    async def fake_execute_analysis_task(
+        session: AsyncSession,
+        task: AnalysisTask,
+        **kwargs: object,
+    ) -> AnalysisResult:
+        raise LLMProviderTimeoutError
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "execute_analysis_task",
+        fake_execute_analysis_task,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/{task.id}/run"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 504
+    assert response.json()["message"] == "LLM provider request timed out"
 
 
 def test_analysis_task_routes_are_registered_in_openapi() -> None:
