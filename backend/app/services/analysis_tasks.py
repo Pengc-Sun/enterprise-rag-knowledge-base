@@ -1,5 +1,6 @@
 import json
 import uuid
+from copy import deepcopy
 from typing import cast
 
 from sqlalchemy import Select, select
@@ -45,6 +46,10 @@ The JSON object must include:
 
 class AnalysisOutputValidationError(LLMProviderResponseError):
     message = "AI analysis output did not match the task schema"
+
+
+class AnalysisCitationValidationError(AnalysisOutputValidationError):
+    message = "AI analysis output citations were missing or invalid"
 
 
 async def list_workspace_analysis_tasks(
@@ -172,6 +177,10 @@ async def execute_analysis_task(
         )
         structured_result = parse_structured_analysis_response(response.content)
         validate_structured_analysis_result(structured_result, task.output_schema)
+        normalized_result, normalized_citations = normalize_structured_analysis_output(
+            structured_result,
+            chunks,
+        )
     except LLMProviderResponseError:
         task.status = AnalysisTaskStatus.FAILED.value
         await session.commit()
@@ -179,9 +188,9 @@ async def execute_analysis_task(
     analysis_result = AnalysisResult(
         workspace_id=task.workspace_id,
         analysis_task_id=task.id,
-        status=AnalysisResultStatus.AI_GENERATED.value,
-        result=structured_result,
-        citations=extract_structured_analysis_citations(structured_result),
+        status=AnalysisResultStatus.NEEDS_REVIEW.value,
+        result=normalized_result,
+        citations=normalized_citations,
         confidence=extract_structured_analysis_confidence(structured_result),
         model=response.model,
         provider=response.provider.value,
@@ -203,7 +212,7 @@ async def create_local_analysis_result(
     analysis_result = AnalysisResult(
         workspace_id=task.workspace_id,
         analysis_task_id=task.id,
-        status=AnalysisResultStatus.AI_GENERATED.value,
+        status=AnalysisResultStatus.NEEDS_REVIEW.value,
         result=build_deterministic_analysis_result(task, chunks),
         citations=build_analysis_citations(chunks),
         confidence=None,
@@ -250,6 +259,8 @@ def build_structured_analysis_user_prompt(
             f"Expected output schema: {output_schema}",
             "",
             "Use only the workspace context below.",
+            "Every finding, requirement, risk, row, procedure, or priority item must include a "
+            "non-empty citations array.",
             "Every citation must reference one of the provided chunk_id values.",
             "",
             "Workspace context:",
@@ -291,6 +302,194 @@ def validate_structured_analysis_result(
     if not output_schema:
         return
     validate_json_schema_value(structured_result, output_schema, "$")
+
+
+def normalize_structured_analysis_output(
+    structured_result: dict[str, object],
+    chunks: list[DocumentChunk],
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    normalized_result = deepcopy(structured_result)
+    chunk_map = build_chunk_citation_context(chunks)
+    citation_store: dict[tuple[str, str | None], dict[str, object]] = {}
+
+    top_level_citation_count = normalize_top_level_citations(
+        normalized_result,
+        chunk_map,
+        citation_store,
+    )
+    finding_count = normalize_finding_citations(
+        normalized_result,
+        chunk_map,
+        citation_store,
+        "$",
+    )
+    string_conclusion_count = count_string_conclusion_arrays(normalized_result)
+
+    if string_conclusion_count > 0 and top_level_citation_count == 0:
+        raise AnalysisCitationValidationError
+    if finding_count == 0 and string_conclusion_count == 0 and top_level_citation_count == 0:
+        raise AnalysisCitationValidationError
+
+    normalized_citations = list(citation_store.values())
+    normalized_result["citations"] = normalized_citations
+    return normalized_result, normalized_citations
+
+
+def build_chunk_citation_context(chunks: list[DocumentChunk]) -> dict[str, DocumentChunk]:
+    return {str(chunk.id): chunk for chunk in chunks}
+
+
+def normalize_top_level_citations(
+    structured_result: dict[str, object],
+    chunk_map: dict[str, DocumentChunk],
+    citation_store: dict[tuple[str, str | None], dict[str, object]],
+) -> int:
+    citations = structured_result.get("citations")
+    if citations is None:
+        return 0
+    if not isinstance(citations, list):
+        raise AnalysisCitationValidationError
+    normalized_citations = normalize_citation_list(
+        citations,
+        chunk_map,
+        citation_store,
+        "$.citations",
+    )
+    structured_result["citations"] = normalized_citations
+    return len(normalized_citations)
+
+
+def normalize_finding_citations(
+    value: object,
+    chunk_map: dict[str, DocumentChunk],
+    citation_store: dict[tuple[str, str | None], dict[str, object]],
+    path: str,
+    *,
+    list_key: str | None = None,
+) -> int:
+    if isinstance(value, dict):
+        finding_count = 0
+        for key, item in value.items():
+            if key == "citations":
+                continue
+            item_path = f"{path}.{key}"
+            finding_count += normalize_finding_citations(
+                item,
+                chunk_map,
+                citation_store,
+                item_path,
+                list_key=key,
+            )
+        return finding_count
+
+    if isinstance(value, list):
+        finding_count = 0
+        for index, item in enumerate(value):
+            item_path = f"{path}[{index}]"
+            if isinstance(item, dict):
+                if list_key != "citations":
+                    item["citations"] = normalize_required_finding_citations(
+                        item,
+                        chunk_map,
+                        citation_store,
+                        item_path,
+                    )
+                    finding_count += 1
+                finding_count += normalize_finding_citations(
+                    item,
+                    chunk_map,
+                    citation_store,
+                    item_path,
+                )
+            elif isinstance(item, list):
+                finding_count += normalize_finding_citations(
+                    item,
+                    chunk_map,
+                    citation_store,
+                    item_path,
+                    list_key=list_key,
+                )
+        return finding_count
+
+    return 0
+
+
+def normalize_required_finding_citations(
+    finding: dict[object, object],
+    chunk_map: dict[str, DocumentChunk],
+    citation_store: dict[tuple[str, str | None], dict[str, object]],
+    path: str,
+) -> list[dict[str, object]]:
+    citations = finding.get("citations")
+    if not isinstance(citations, list) or not citations:
+        raise AnalysisCitationValidationError(f"{path}.citations is required")
+    return normalize_citation_list(citations, chunk_map, citation_store, f"{path}.citations")
+
+
+def normalize_citation_list(
+    citations: list[object],
+    chunk_map: dict[str, DocumentChunk],
+    citation_store: dict[tuple[str, str | None], dict[str, object]],
+    path: str,
+) -> list[dict[str, object]]:
+    normalized_citations: list[dict[str, object]] = []
+    for index, citation in enumerate(citations):
+        normalized_citation = normalize_citation(
+            citation,
+            chunk_map,
+            f"{path}[{index}]",
+        )
+        citation_key = (
+            cast(str, normalized_citation["chunk_id"]),
+            cast(str | None, normalized_citation.get("quote")),
+        )
+        citation_store.setdefault(citation_key, normalized_citation)
+        normalized_citations.append(normalized_citation)
+    return normalized_citations
+
+
+def normalize_citation(
+    citation: object,
+    chunk_map: dict[str, DocumentChunk],
+    path: str,
+) -> dict[str, object]:
+    if isinstance(citation, str):
+        chunk_id = citation
+        quote = None
+    elif isinstance(citation, dict):
+        raw_chunk_id = citation.get("chunk_id")
+        if not isinstance(raw_chunk_id, str):
+            raise AnalysisCitationValidationError(f"{path}.chunk_id is required")
+        chunk_id = raw_chunk_id
+        raw_quote = citation.get("quote")
+        quote = raw_quote if isinstance(raw_quote, str) and raw_quote else None
+    else:
+        raise AnalysisCitationValidationError(f"{path} must be a citation object or chunk id")
+
+    chunk = chunk_map.get(chunk_id)
+    if chunk is None:
+        raise AnalysisCitationValidationError(f"{path}.chunk_id must reference retrieved context")
+    normalized = build_analysis_citation(chunk)
+    if quote is not None:
+        normalized["quote"] = quote
+    return normalized
+
+
+def count_string_conclusion_arrays(value: object, *, key: str | None = None) -> int:
+    if isinstance(value, dict):
+        count = 0
+        for item_key, item in value.items():
+            if item_key == "citations":
+                continue
+            count += count_string_conclusion_arrays(item, key=item_key)
+        return count
+
+    if isinstance(value, list):
+        if key != "citations" and all(isinstance(item, str) for item in value):
+            return len(value)
+        return sum(count_string_conclusion_arrays(item, key=key) for item in value)
+
+    return 0
 
 
 def validate_json_schema_value(value: object, schema: dict[str, object], path: str) -> None:
@@ -422,15 +621,6 @@ def is_json_number(value: object) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
 
 
-def extract_structured_analysis_citations(
-    structured_result: dict[str, object],
-) -> list[dict[str, object]]:
-    citations = structured_result.get("citations")
-    if not isinstance(citations, list):
-        return []
-    return [citation for citation in citations if isinstance(citation, dict)]
-
-
 def extract_structured_analysis_confidence(structured_result: dict[str, object]) -> float | None:
     confidence = structured_result.get("confidence")
     if isinstance(confidence, int | float):
@@ -536,6 +726,7 @@ def build_deterministic_analysis_result(
             "document_id": str(chunk.document_id),
             "page_number": chunk.page_number,
             "text": chunk.content,
+            "citations": [build_analysis_citation(chunk)],
         }
         for chunk in chunks
     ]
@@ -556,17 +747,17 @@ def build_analysis_summary(task: AnalysisTask, chunks: list[DocumentChunk]) -> s
 
 
 def build_analysis_citations(chunks: list[DocumentChunk]) -> list[dict[str, object]]:
-    citations: list[dict[str, object]] = []
-    for chunk in chunks:
-        document = getattr(chunk, "document", None)
-        citations.append(
-            {
-                "chunk_id": str(chunk.id),
-                "document_id": str(chunk.document_id),
-                "document_name": getattr(document, "filename", None),
-                "knowledge_base_id": str(chunk.knowledge_base_id),
-                "page_number": chunk.page_number,
-                "section_title": chunk.section_title,
-            }
-        )
-    return citations
+    return [build_analysis_citation(chunk) for chunk in chunks]
+
+
+def build_analysis_citation(chunk: DocumentChunk) -> dict[str, object]:
+    document = getattr(chunk, "document", None)
+    return {
+        "chunk_id": str(chunk.id),
+        "document_id": str(chunk.document_id),
+        "document_name": getattr(document, "filename", None),
+        "knowledge_base_id": str(chunk.knowledge_base_id),
+        "page_number": chunk.page_number,
+        "section_title": chunk.section_title,
+        "quote": chunk.content,
+    }

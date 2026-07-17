@@ -1,6 +1,7 @@
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -13,6 +14,7 @@ from backend.app.models.analysis import (
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.schemas.analysis import AnalysisResultCreate, AnalysisTaskCreate
 from backend.app.services.analysis_tasks import (
+    AnalysisCitationValidationError,
     AnalysisOutputValidationError,
     build_analysis_context_statement,
     build_structured_analysis_messages,
@@ -23,6 +25,7 @@ from backend.app.services.analysis_tasks import (
     get_workspace_analysis_task,
     list_analysis_results_for_task,
     list_workspace_analysis_tasks,
+    normalize_structured_analysis_output,
     parse_structured_analysis_response,
     validate_structured_analysis_result,
 )
@@ -433,15 +436,65 @@ async def test_execute_analysis_task_retrieves_workspace_chunks_and_creates_resu
     assert task.status == AnalysisTaskStatus.COMPLETED.value
     assert result.workspace_id == workspace_id
     assert result.analysis_task_id == task.id
-    assert result.status == AnalysisResultStatus.AI_GENERATED.value
+    assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
     assert result.provider == "local"
     assert result.model == "workspace-scoped-retrieval"
     assert result.result["chunk_count"] == 1
+    result_findings = cast(list[dict[str, object]], result.result["findings"])
+    result_finding_citations = cast(list[dict[str, object]], result_findings[0]["citations"])
+    assert result_finding_citations[0]["chunk_id"] == str(chunk.id)
     assert result.citations[0]["chunk_id"] == str(chunk.id)
     assert result.citations[0]["document_name"] == "policy.md"
+    assert result.citations[0]["quote"] == chunk.content
     assert session.added is result
     assert session.committed is True
     assert session.refreshed is result
+
+
+def test_normalize_structured_analysis_output_requires_each_finding_citation() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    structured_result: dict[str, object] = {
+        "findings": [{"claim": "Hotel receipt required."}],
+        "citations": [{"chunk_id": str(chunk.id)}],
+    }
+
+    with pytest.raises(AnalysisCitationValidationError):
+        normalize_structured_analysis_output(structured_result, [chunk])
+
+
+def test_normalize_structured_analysis_output_persists_normalized_citations() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    structured_result: dict[str, object] = {
+        "findings": [
+            {
+                "claim": "Hotel receipt required.",
+                "citations": [{"chunk_id": str(chunk.id), "quote": "receipt required"}],
+            }
+        ],
+        "citations": [str(chunk.id)],
+    }
+
+    normalized_result, normalized_citations = normalize_structured_analysis_output(
+        structured_result,
+        [chunk],
+    )
+
+    findings = cast(list[dict[str, object]], normalized_result["findings"])
+    finding_citations = cast(list[dict[str, object]], findings[0]["citations"])
+    finding_citation = finding_citations[0]
+    assert finding_citation["chunk_id"] == str(chunk.id)
+    assert finding_citation["document_id"] == str(chunk.document_id)
+    assert finding_citation["document_name"] == "policy.md"
+    assert finding_citation["knowledge_base_id"] == str(chunk.knowledge_base_id)
+    assert finding_citation["page_number"] == 1
+    assert finding_citation["section_title"] == "Hotel Reimbursement"
+    assert finding_citation["quote"] == "receipt required"
+    assert normalized_result["citations"] == normalized_citations
+    assert normalized_citations[0]["chunk_id"] == str(chunk.id)
 
 
 @pytest.mark.asyncio
@@ -468,8 +521,14 @@ async def test_execute_analysis_task_persists_structured_llm_json_result() -> No
     )
 
     assert task.status == AnalysisTaskStatus.COMPLETED.value
-    assert result.result == response_payload
-    assert result.citations == response_payload["citations"]
+    assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
+    assert result.result["summary"] == response_payload["summary"]
+    result_findings = cast(list[dict[str, object]], result.result["findings"])
+    result_finding_citations = cast(list[dict[str, object]], result_findings[0]["citations"])
+    assert result_finding_citations[0]["chunk_id"] == str(chunk.id)
+    assert result.citations[0]["chunk_id"] == str(chunk.id)
+    assert result.citations[0]["document_name"] == "policy.md"
+    assert result.citations[0]["quote"] == chunk.content
     assert result.confidence == 0.82
     assert result.provider == "openai"
     assert result.model == "structured-test-model"
@@ -482,6 +541,33 @@ async def test_execute_analysis_task_persists_structured_llm_json_result() -> No
     assert llm_provider.max_tokens == 512
     assert "Return only valid JSON" in llm_provider.messages[0].content
     assert session.added is result
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_rejects_uncited_findings_without_result() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    response_payload = {
+        "summary": "Hotel receipts are required.",
+        "findings": [{"title": "Receipt required"}],
+        "citations": [{"chunk_id": str(chunk.id)}],
+        "confidence": 0.82,
+    }
+    llm_provider = FakeStructuredLLMProvider(json.dumps(response_payload))
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    with pytest.raises(AnalysisCitationValidationError):
+        await execute_analysis_task(
+            session,  # type: ignore[arg-type]
+            task,
+            llm_provider=llm_provider,
+        )
+
+    assert task.status == AnalysisTaskStatus.FAILED.value
+    assert session.added is None
+    assert session.committed is True
 
 
 @pytest.mark.asyncio
@@ -509,7 +595,12 @@ async def test_execute_analysis_task_rejects_schema_mismatch_without_result() ->
     }
     chunk = make_chunk(workspace_id, knowledge_base_id)
     response_payload = {
-        "requirements": [{"requirement": "Submit receipts"}],
+        "requirements": [
+            {
+                "requirement": "Submit receipts",
+                "citations": [{"chunk_id": str(chunk.id)}],
+            }
+        ],
         "citations": ["chunk-1"],
     }
     llm_provider = FakeStructuredLLMProvider(json.dumps(response_payload))
