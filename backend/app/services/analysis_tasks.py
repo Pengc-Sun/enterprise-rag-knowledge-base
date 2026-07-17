@@ -19,6 +19,7 @@ from backend.app.services.llms import (
     DeterministicLLMProvider,
     LLMMessage,
     LLMProvider,
+    LLMProviderName,
     LLMProviderResponseError,
     LLMResponse,
 )
@@ -166,8 +167,25 @@ async def execute_analysis_task(
 ) -> AnalysisResult:
     task.status = AnalysisTaskStatus.RUNNING.value
     chunks = await retrieve_analysis_context_chunks(session, task)
-    if llm_provider is None or isinstance(llm_provider, DeterministicLLMProvider):
+    if llm_provider is None:
         return await create_local_analysis_result(session, task, chunks)
+    if isinstance(llm_provider, DeterministicLLMProvider):
+        structured_result = build_deterministic_structured_analysis_result(task, chunks)
+        validate_structured_analysis_result(structured_result, task.output_schema)
+        normalized_result, normalized_citations = normalize_structured_analysis_output(
+            structured_result,
+            chunks,
+        )
+        return await create_structured_analysis_result(
+            session,
+            task,
+            normalized_result=normalized_result,
+            normalized_citations=normalized_citations,
+            confidence=extract_structured_analysis_confidence(structured_result),
+            model=llm_provider.model,
+            provider=LLMProviderName.DETERMINISTIC.value,
+            token_usage={},
+        )
 
     try:
         response = await llm_provider.generate(
@@ -185,16 +203,39 @@ async def execute_analysis_task(
         task.status = AnalysisTaskStatus.FAILED.value
         await session.commit()
         raise
+    return await create_structured_analysis_result(
+        session,
+        task,
+        normalized_result=normalized_result,
+        normalized_citations=normalized_citations,
+        confidence=extract_structured_analysis_confidence(structured_result),
+        model=response.model,
+        provider=response.provider.value,
+        token_usage=llm_usage_to_dict(response),
+    )
+
+
+async def create_structured_analysis_result(
+    session: AsyncSession,
+    task: AnalysisTask,
+    *,
+    normalized_result: dict[str, object],
+    normalized_citations: list[dict[str, object]],
+    confidence: float | None,
+    model: str,
+    provider: str,
+    token_usage: dict[str, object],
+) -> AnalysisResult:
     analysis_result = AnalysisResult(
         workspace_id=task.workspace_id,
         analysis_task_id=task.id,
         status=AnalysisResultStatus.NEEDS_REVIEW.value,
         result=normalized_result,
         citations=normalized_citations,
-        confidence=extract_structured_analysis_confidence(structured_result),
-        model=response.model,
-        provider=response.provider.value,
-        token_usage=llm_usage_to_dict(response),
+        confidence=confidence,
+        model=model,
+        provider=provider,
+        token_usage=token_usage,
     )
     task.status = AnalysisTaskStatus.COMPLETED.value
     session.add(analysis_result)
@@ -302,6 +343,134 @@ def validate_structured_analysis_result(
     if not output_schema:
         return
     validate_json_schema_value(structured_result, output_schema, "$")
+
+
+def build_deterministic_structured_analysis_result(
+    task: AnalysisTask,
+    chunks: list[DocumentChunk],
+) -> dict[str, object]:
+    if not task.output_schema:
+        return build_deterministic_analysis_result(task, chunks)
+
+    structured_result = build_deterministic_json_schema_value(
+        task.output_schema,
+        chunks,
+        key=task.template_task_key or task.task_type,
+    )
+    if not isinstance(structured_result, dict):
+        raise AnalysisOutputValidationError
+    return structured_result
+
+
+def build_deterministic_json_schema_value(
+    schema: dict[str, object],
+    chunks: list[DocumentChunk],
+    *,
+    key: str,
+    in_result_array: bool = False,
+) -> object:
+    schema_type = schema.get("type")
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        return enum_values[0]
+
+    if schema_type == "object":
+        return build_deterministic_json_object(
+            schema,
+            chunks,
+            key=key,
+            in_result_array=in_result_array,
+        )
+    if schema_type == "array":
+        return build_deterministic_json_array(schema, chunks, key=key)
+    if schema_type == "integer":
+        return 1
+    if schema_type == "number":
+        return 0.8
+    if schema_type == "boolean":
+        return True
+    if isinstance(schema_type, list):
+        for candidate_type in schema_type:
+            if candidate_type != "null":
+                candidate_schema = dict(schema)
+                candidate_schema["type"] = candidate_type
+                return build_deterministic_json_schema_value(candidate_schema, chunks, key=key)
+        return None
+    return build_deterministic_string(key, chunks)
+
+
+def build_deterministic_json_object(
+    schema: dict[str, object],
+    chunks: list[DocumentChunk],
+    *,
+    key: str,
+    in_result_array: bool,
+) -> dict[str, object]:
+    properties = schema.get("properties")
+    required = schema.get("required")
+    required_keys = (
+        {item for item in required if isinstance(item, str)}
+        if isinstance(required, list)
+        else set()
+    )
+    result: dict[str, object] = {}
+
+    if isinstance(properties, dict):
+        for property_key, property_schema in properties.items():
+            if not isinstance(property_key, str) or not isinstance(property_schema, dict):
+                continue
+            if property_key in required_keys or property_key in {
+                "summary",
+                "citations",
+                "confidence",
+            }:
+                result[property_key] = build_deterministic_json_schema_value(
+                    property_schema,
+                    chunks,
+                    key=property_key,
+                )
+
+    if in_result_array and "citations" not in result:
+        result["citations"] = build_deterministic_chunk_id_citations(chunks)
+    return result
+
+
+def build_deterministic_json_array(
+    schema: dict[str, object],
+    chunks: list[DocumentChunk],
+    *,
+    key: str,
+) -> list[object]:
+    if key == "citations":
+        return build_deterministic_chunk_id_citations(chunks)
+
+    items_schema = schema.get("items")
+    if not isinstance(items_schema, dict):
+        return []
+
+    if not chunks:
+        return []
+
+    return [
+        build_deterministic_json_schema_value(
+            items_schema,
+            chunks,
+            key=key,
+            in_result_array=True,
+        )
+    ]
+
+
+def build_deterministic_chunk_id_citations(chunks: list[DocumentChunk]) -> list[object]:
+    if not chunks:
+        return []
+    return [str(chunks[0].id)]
+
+
+def build_deterministic_string(key: str, chunks: list[DocumentChunk]) -> str:
+    if chunks:
+        return f"Deterministic {key}: {chunks[0].content}"
+    return f"Deterministic {key}: no workspace context found"
 
 
 def normalize_structured_analysis_output(

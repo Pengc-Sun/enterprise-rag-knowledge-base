@@ -17,6 +17,7 @@ from backend.app.services.analysis_tasks import (
     AnalysisCitationValidationError,
     AnalysisOutputValidationError,
     build_analysis_context_statement,
+    build_deterministic_structured_analysis_result,
     build_structured_analysis_messages,
     create_analysis_result_for_task,
     create_workspace_analysis_task,
@@ -30,6 +31,7 @@ from backend.app.services.analysis_tasks import (
     validate_structured_analysis_result,
 )
 from backend.app.services.llms import (
+    DeterministicLLMProvider,
     LLMMessage,
     LLMProvider,
     LLMProviderName,
@@ -495,6 +497,86 @@ def test_normalize_structured_analysis_output_persists_normalized_citations() ->
     assert finding_citation["quote"] == "receipt required"
     assert normalized_result["citations"] == normalized_citations
     assert normalized_citations[0]["chunk_id"] == str(chunk.id)
+
+
+def test_build_deterministic_structured_analysis_result_matches_task_schema() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    task.template_task_key = "policy_requirements"
+    task.output_schema = {
+        "type": "object",
+        "required": ["requirements", "citations"],
+        "properties": {
+            "requirements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["requirement", "evidence_required"],
+                    "properties": {
+                        "requirement": {"type": "string"},
+                        "evidence_required": {"type": "string"},
+                    },
+                },
+            },
+            "citations": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+
+    structured_result = build_deterministic_structured_analysis_result(task, [chunk])
+
+    validate_structured_analysis_result(structured_result, task.output_schema)
+    requirements = cast(list[dict[str, object]], structured_result["requirements"])
+    requirement = requirements[0]
+    assert "Deterministic requirement" in cast(str, requirement["requirement"])
+    assert "Deterministic evidence_required" in cast(str, requirement["evidence_required"])
+    assert requirement["citations"] == [str(chunk.id)]
+    assert structured_result["citations"] == [str(chunk.id)]
+
+
+@pytest.mark.asyncio
+async def test_execute_analysis_task_uses_deterministic_structured_provider() -> None:
+    workspace_id = uuid.uuid4()
+    knowledge_base_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    task.output_schema = {
+        "type": "object",
+        "required": ["requirements", "citations"],
+        "properties": {
+            "requirements": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["requirement", "evidence_required"],
+                    "properties": {
+                        "requirement": {"type": "string"},
+                        "evidence_required": {"type": "string"},
+                    },
+                },
+            },
+            "citations": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    chunk = make_chunk(workspace_id, knowledge_base_id)
+    session = FakeSession([FakeResult(items=[chunk])])
+
+    result = await execute_analysis_task(
+        session,  # type: ignore[arg-type]
+        task,
+        llm_provider=DeterministicLLMProvider(model="deterministic-analysis"),
+    )
+
+    assert task.status == AnalysisTaskStatus.COMPLETED.value
+    assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
+    assert result.provider == "deterministic"
+    assert result.model == "deterministic-analysis"
+    requirements = cast(list[dict[str, object]], result.result["requirements"])
+    requirement_citations = cast(list[dict[str, object]], requirements[0]["citations"])
+    assert requirement_citations[0]["chunk_id"] == str(chunk.id)
+    assert result.citations[0]["chunk_id"] == str(chunk.id)
+    assert result.citations[0]["document_name"] == "policy.md"
+    assert session.added is result
 
 
 @pytest.mark.asyncio
