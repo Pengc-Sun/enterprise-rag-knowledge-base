@@ -13,6 +13,8 @@ from backend.app.main import app
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
+from backend.app.schemas.report import ReportSectionGenerateRequest
+from backend.app.services.reports import ReportSectionGenerationError
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES
 
 
@@ -268,6 +270,123 @@ def test_create_report_section_returns_created_section(monkeypatch: pytest.Monke
     assert body["data"]["report_id"] == str(report.id)
 
 
+def test_generate_report_section_returns_created_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    section = make_section(workspace.id, report.id)
+    analysis_result_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_generate_report_section_from_results(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        generation: ReportSectionGenerateRequest,
+    ) -> ReportSection:
+        assert workspace_id == workspace.id
+        assert report_id == report.id
+        assert generation.analysis_result_ids == [analysis_result_id]
+        assert generation.template_section_key == "summary"
+        return section
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(
+        report_endpoints,
+        "generate_report_section_from_results",
+        fake_generate_report_section_from_results,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections/generate",
+            json={
+                "analysis_result_ids": [str(analysis_result_id)],
+                "template_section_key": "summary",
+                "title": "Executive Summary",
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["message"] == "report section generated"
+    assert body["data"]["id"] == str(section.id)
+
+
+def test_generate_report_section_returns_400_for_unreportable_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_generate_report_section_from_results(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        generation: ReportSectionGenerateRequest,
+    ) -> ReportSection:
+        raise ReportSectionGenerationError("Analysis results must be approved or edited")
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(
+        report_endpoints,
+        "generate_report_section_from_results",
+        fake_generate_report_section_from_results,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections/generate",
+            json={"analysis_result_ids": [str(uuid.uuid4())]},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Analysis results must be approved or edited"
+
+
 def test_report_routes_are_registered_in_openapi() -> None:
     clear_overrides()
     client = TestClient(app)
@@ -277,6 +396,9 @@ def test_report_routes_are_registered_in_openapi() -> None:
     assert "/api/v1/workspaces/{workspace_id}/reports" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections" in paths
+    assert (
+        "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/generate"
+    ) in paths
     assert (
         "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/{section_id}"
     ) in paths

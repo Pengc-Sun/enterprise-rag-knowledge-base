@@ -9,6 +9,7 @@ from backend.app.schemas.report import (
     ReportCreate,
     ReportRead,
     ReportSectionCreate,
+    ReportSectionGenerateRequest,
     ReportSectionRead,
 )
 
@@ -49,6 +50,27 @@ def test_report_section_create_accepts_content_fields() -> None:
     assert section.source_task_keys == []
     assert section.source_result_ids == []
     assert section.sort_order == 0
+
+
+def test_report_section_generate_request_requires_analysis_results() -> None:
+    with pytest.raises(ValidationError):
+        ReportSectionGenerateRequest(analysis_result_ids=[])
+
+
+def test_report_section_generate_request_accepts_generation_options() -> None:
+    analysis_result_id = uuid.uuid4()
+
+    payload = ReportSectionGenerateRequest(
+        analysis_result_ids=[analysis_result_id],
+        template_section_key="findings",
+        title="Findings",
+        sort_order=20,
+    )
+
+    assert payload.analysis_result_ids == [analysis_result_id]
+    assert payload.template_section_key == "findings"
+    assert payload.title == "Findings"
+    assert payload.sort_order == 20
 
 
 def test_report_section_read_serializes_model() -> None:

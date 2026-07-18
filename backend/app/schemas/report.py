@@ -38,6 +38,13 @@ class ReportSectionCreate(ReportSectionBase):
     pass
 
 
+class ReportSectionGenerateRequest(BaseModel):
+    analysis_result_ids: list[uuid.UUID] = Field(min_length=1)
+    template_section_key: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    sort_order: int = 0
+
+
 class ReportSectionRead(ReportSectionBase):
     id: uuid.UUID
     report_id: uuid.UUID

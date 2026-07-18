@@ -3,11 +3,18 @@ from datetime import UTC, datetime
 
 import pytest
 
+from backend.app.models.analysis import AnalysisResult, AnalysisResultStatus, AnalysisTask
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
-from backend.app.schemas.report import ReportCreate, ReportSectionCreate
+from backend.app.schemas.report import (
+    ReportCreate,
+    ReportSectionCreate,
+    ReportSectionGenerateRequest,
+)
 from backend.app.services.reports import (
+    ReportSectionGenerationError,
     create_report,
     create_report_section,
+    generate_report_section_from_results,
     get_report_for_workspace,
     get_report_section_for_report,
     list_report_sections_for_report,
@@ -33,6 +40,9 @@ class FakeResult:
 
     def scalar_one_or_none(self) -> object | None:
         return self.scalar
+
+    def all(self) -> list[object]:
+        return self.items
 
 
 class FakeSession:
@@ -85,6 +95,45 @@ def make_section(workspace_id: uuid.UUID, report_id: uuid.UUID) -> ReportSection
         source_result_ids=[],
         sort_order=10,
         status=ReportSectionStatus.DRAFT.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_analysis_task(workspace_id: uuid.UUID) -> AnalysisTask:
+    now = datetime.now(UTC)
+    return AnalysisTask(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        template_task_key="policy_requirements",
+        name="Policy Requirements",
+        task_type="extraction",
+        status="completed",
+        input_scope={},
+        output_schema={},
+        created_by=uuid.uuid4(),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_analysis_result(
+    workspace_id: uuid.UUID,
+    task_id: uuid.UUID,
+    status: str = AnalysisResultStatus.APPROVED.value,
+) -> AnalysisResult:
+    now = datetime.now(UTC)
+    return AnalysisResult(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        analysis_task_id=task_id,
+        status=status,
+        result={"finding": "Daily meal allowance is GBP 40."},
+        citations=[{"document_title": "Policy", "page": 3, "chunk_id": "chunk-1"}],
+        confidence=0.92,
+        model="test-model",
+        provider="test-provider",
+        token_usage={},
         created_at=now,
         updated_at=now,
     )
@@ -201,3 +250,53 @@ async def test_create_report_section_persists_section() -> None:
     assert section.status == ReportSectionStatus.DRAFT.value
     assert session.added is section
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_generate_report_section_from_approved_results_persists_draft() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    task = make_analysis_task(workspace_id)
+    analysis_result = make_analysis_result(workspace_id, task.id)
+    session = FakeSession([FakeResult(items=[(analysis_result, task)])])
+
+    section = await generate_report_section_from_results(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report_id,
+        ReportSectionGenerateRequest(
+            analysis_result_ids=[analysis_result.id],
+            template_section_key="findings",
+            sort_order=20,
+        ),
+    )
+
+    assert section.workspace_id == workspace_id
+    assert section.report_id == report_id
+    assert section.title == "Policy Requirements"
+    assert "Daily meal allowance is GBP 40" in section.body_markdown
+    assert "Policy (page 3, chunk chunk-1)" in section.body_markdown
+    assert section.source_task_keys == ["policy_requirements"]
+    assert section.source_result_ids == [str(analysis_result.id)]
+    assert section.sort_order == 20
+    assert section.status == ReportSectionStatus.DRAFT.value
+    assert session.added is section
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_generate_report_section_rejects_missing_or_unapproved_results() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    session = FakeSession([FakeResult(items=[])])
+
+    with pytest.raises(ReportSectionGenerationError):
+        await generate_report_section_from_results(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report_id,
+            ReportSectionGenerateRequest(analysis_result_ids=[uuid.uuid4()]),
+        )
+
+    assert session.added is None
+    assert session.committed is False

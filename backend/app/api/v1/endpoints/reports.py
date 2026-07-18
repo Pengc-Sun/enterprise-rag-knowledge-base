@@ -13,12 +13,15 @@ from backend.app.schemas.report import (
     ReportCreate,
     ReportRead,
     ReportSectionCreate,
+    ReportSectionGenerateRequest,
     ReportSectionRead,
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.reports import (
+    ReportSectionGenerationError,
     create_report,
     create_report_section,
+    generate_report_section_from_results,
     get_report_for_workspace,
     get_report_section_for_report,
     list_report_sections_for_report,
@@ -97,6 +100,39 @@ async def create_report_section_endpoint(
     return success_response(
         ReportSectionRead.model_validate(section),
         message="report section created",
+    )
+
+
+@router.post(
+    "/{report_id}/sections/generate",
+    response_model=APIResponse[ReportSectionRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_report_section_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    generation: ReportSectionGenerateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportSectionRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    await get_report_or_404(session, workspace_id, report_id)
+    try:
+        section = await generate_report_section_from_results(
+            session,
+            workspace_id,
+            report_id,
+            generation,
+        )
+    except ReportSectionGenerationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return success_response(
+        ReportSectionRead.model_validate(section),
+        message="report section generated",
     )
 
 

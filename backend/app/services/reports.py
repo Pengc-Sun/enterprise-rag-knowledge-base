@@ -1,10 +1,28 @@
 import uuid
+from collections.abc import Iterable
+from json import dumps
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.analysis import AnalysisResult, AnalysisResultStatus, AnalysisTask
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
-from backend.app.schemas.report import ReportCreate, ReportSectionCreate
+from backend.app.schemas.report import (
+    ReportCreate,
+    ReportSectionCreate,
+    ReportSectionGenerateRequest,
+)
+
+REPORTABLE_ANALYSIS_RESULT_STATUSES = frozenset(
+    {
+        AnalysisResultStatus.APPROVED.value,
+        AnalysisResultStatus.EDITED.value,
+    }
+)
+
+
+class ReportSectionGenerationError(ValueError):
+    pass
 
 
 async def list_reports_for_workspace(
@@ -104,3 +122,120 @@ async def create_report_section(
     await session.commit()
     await session.refresh(section)
     return section
+
+
+async def generate_report_section_from_results(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    generation: ReportSectionGenerateRequest,
+) -> ReportSection:
+    result_ids = _dedupe_uuids(generation.analysis_result_ids)
+    result = await session.execute(
+        select(AnalysisResult, AnalysisTask)
+        .join(AnalysisTask, AnalysisResult.analysis_task_id == AnalysisTask.id)
+        .where(
+            AnalysisResult.workspace_id == workspace_id,
+            AnalysisResult.id.in_(result_ids),
+            AnalysisResult.status.in_(REPORTABLE_ANALYSIS_RESULT_STATUSES),
+        )
+    )
+    rows = result.all()
+    rows_by_id = {analysis_result.id: (analysis_result, task) for analysis_result, task in rows}
+
+    missing_result_ids = [result_id for result_id in result_ids if result_id not in rows_by_id]
+    if missing_result_ids:
+        raise ReportSectionGenerationError(
+            "Analysis results must exist in this workspace and be approved or edited"
+        )
+
+    ordered_rows = [rows_by_id[result_id] for result_id in result_ids]
+    section = ReportSection(
+        workspace_id=workspace_id,
+        report_id=report_id,
+        template_section_key=generation.template_section_key,
+        title=generation.title or _build_generated_section_title(ordered_rows),
+        body_markdown=_build_generated_section_markdown(ordered_rows),
+        source_task_keys=_collect_source_task_keys(task for _, task in ordered_rows),
+        source_result_ids=[str(analysis_result.id) for analysis_result, _ in ordered_rows],
+        sort_order=generation.sort_order,
+        status=ReportSectionStatus.DRAFT.value,
+    )
+    session.add(section)
+    await session.commit()
+    await session.refresh(section)
+    return section
+
+
+def _dedupe_uuids(values: Iterable[uuid.UUID]) -> list[uuid.UUID]:
+    seen: set[uuid.UUID] = set()
+    deduped: list[uuid.UUID] = []
+    for value in values:
+        if value not in seen:
+            deduped.append(value)
+            seen.add(value)
+    return deduped
+
+
+def _build_generated_section_title(
+    rows: list[tuple[AnalysisResult, AnalysisTask]],
+) -> str:
+    if len(rows) == 1:
+        return rows[0][1].name
+    return "Draft Report Section"
+
+
+def _build_generated_section_markdown(
+    rows: list[tuple[AnalysisResult, AnalysisTask]],
+) -> str:
+    blocks: list[str] = []
+    for index, (analysis_result, task) in enumerate(rows, start=1):
+        heading = task.name if len(rows) == 1 else f"{index}. {task.name}"
+        blocks.append(f"### {heading}")
+        blocks.append("")
+        blocks.append(_json_block(analysis_result.result))
+
+        if analysis_result.citations:
+            blocks.append("")
+            blocks.append("#### Citations")
+            blocks.extend(
+                f"- {_format_citation(citation)}" for citation in analysis_result.citations
+            )
+
+        blocks.append("")
+
+    return "\n".join(blocks).strip()
+
+
+def _json_block(value: object) -> str:
+    return f"```json\n{dumps(value, ensure_ascii=False, indent=2, sort_keys=True)}\n```"
+
+
+def _format_citation(citation: dict[str, object]) -> str:
+    title = str(
+        citation.get("document_title")
+        or citation.get("document_name")
+        or citation.get("file_name")
+        or citation.get("source")
+        or "Source"
+    )
+    page = citation.get("page")
+    chunk_id = citation.get("chunk_id")
+    suffix_parts = []
+    if page is not None:
+        suffix_parts.append(f"page {page}")
+    if chunk_id is not None:
+        suffix_parts.append(f"chunk {chunk_id}")
+    if not suffix_parts:
+        return title
+    return f"{title} ({', '.join(suffix_parts)})"
+
+
+def _collect_source_task_keys(tasks: Iterable[AnalysisTask]) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for task in tasks:
+        if task.template_task_key and task.template_task_key not in seen:
+            keys.append(task.template_task_key)
+            seen.add(task.template_task_key)
+    return keys

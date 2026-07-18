@@ -749,9 +749,9 @@ edit. Successful review decisions also create an `AuditLog` record with action
 
 ## Report Endpoints
 
-Report endpoints are workspace-scoped and require authentication. Day 43 provides the base report
-and section API surface; later report workflow days add approved-content generation, preview,
-editing, ordering, and exports.
+Report endpoints are workspace-scoped and require authentication. Reports start as drafts. Draft
+sections can be created manually or generated from approved reviewer content; later report workflow
+days add preview, editing, ordering, and exports.
 
 ### List reports
 
@@ -810,6 +810,27 @@ Request body:
   "body_markdown": "",
   "source_task_keys": ["policy_requirements"],
   "source_result_ids": [],
+  "sort_order": 10
+}
+```
+
+### Generate report section
+
+```text
+POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/generate
+```
+
+Requires workspace owner or admin. The generation source list must contain analysis results from the
+same workspace with status `approved` or `edited`. The endpoint creates a draft report section with
+Markdown content, source task keys, and source result IDs.
+
+Request body:
+
+```json
+{
+  "analysis_result_ids": ["3f32114b-8c5d-4f1d-8a40-7508d1189012"],
+  "template_section_key": "requirements",
+  "title": "Policy Requirements",
   "sort_order": 10
 }
 ```
