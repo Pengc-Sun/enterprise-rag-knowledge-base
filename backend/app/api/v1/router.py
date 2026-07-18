@@ -8,6 +8,7 @@ from backend.app.api.v1.endpoints import (
     health,
     knowledge_bases,
     rag,
+    reports,
     users,
     workspace_templates,
     workspaces,
@@ -25,6 +26,7 @@ api_router.include_router(knowledge_bases.router)
 api_router.include_router(knowledge_bases.workspace_router)
 api_router.include_router(rag.router)
 api_router.include_router(rag.workspace_router)
+api_router.include_router(reports.router)
 api_router.include_router(users.router)
 api_router.include_router(workspaces.router)
 api_router.include_router(workspace_templates.router)

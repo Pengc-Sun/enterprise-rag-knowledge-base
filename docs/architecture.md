@@ -90,6 +90,8 @@ Main entities:
 - `AnalysisTask`: workspace-scoped structured AI task created manually or from a workspace template.
 - `AnalysisResult`: structured AI output, normalized citations, confidence, provider metadata, and review status.
 - `ReviewDecision`: reviewer approve, edit, reject, or request-changes action with original and edited result snapshots.
+- `Report`: workspace-scoped formal report container with draft, ready, or exported status.
+- `ReportSection`: ordered report content block with markdown body, template key, source task keys, and source result IDs.
 - `AuditLog`: workspace-scoped event record for key workspace, member, document, directory, and review actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:
@@ -125,6 +127,8 @@ Authorization is enforced in service or endpoint logic through knowledge base an
 - Workspace read operations allow `owner`, `admin`, `editor`, `reviewer`, or `viewer`.
 - Workspace write and member-management operations allow `owner` or `admin`.
 - Review queue and review decision creation allow `owner`, `admin`, or `reviewer`.
+- Report and report section reads allow workspace read access; report and section creation require
+  `owner` or `admin`.
 - Deleting a workspace requires `owner`.
 - Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 

@@ -64,6 +64,8 @@ Endpoint behavior:
 - Document listing requires workspace read access.
 - Document upload, reprocess, and delete require workspace owner or admin.
 - Review queue listing and review decision creation require workspace owner, admin, or reviewer.
+- Report and report section reads require workspace read access.
+- Report and report section creation require workspace owner or admin.
 - Workspace creation, workspace updates, member changes, directory changes, document write actions,
   and successful review decisions create database audit log records.
 - RAG query, retrieval debug, conversations, and chat require workspace read access.

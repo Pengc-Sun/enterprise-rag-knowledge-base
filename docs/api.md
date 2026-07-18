@@ -747,6 +747,81 @@ Each decision persists a `ReviewDecision` row with the original AI output snapsh
 edit. Successful review decisions also create an `AuditLog` record with action
 `review_decision.created`.
 
+## Report Endpoints
+
+Report endpoints are workspace-scoped and require authentication. Day 43 provides the base report
+and section API surface; later report workflow days add approved-content generation, preview,
+editing, ordering, and exports.
+
+### List reports
+
+```text
+GET /api/v1/workspaces/{workspace_id}/reports
+```
+
+Requires workspace read access.
+
+### Create report
+
+```text
+POST /api/v1/workspaces/{workspace_id}/reports
+```
+
+Requires workspace owner or admin. New reports are created as `draft`.
+
+Request body:
+
+```json
+{
+  "title": "Policy Review Report"
+}
+```
+
+### Read report
+
+```text
+GET /api/v1/workspaces/{workspace_id}/reports/{report_id}
+```
+
+Requires workspace read access.
+
+### List report sections
+
+```text
+GET /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections
+```
+
+Requires workspace read access.
+
+### Create report section
+
+```text
+POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections
+```
+
+Requires workspace owner or admin. New sections are created as `draft`.
+
+Request body:
+
+```json
+{
+  "template_section_key": "requirements",
+  "title": "Policy Requirements",
+  "body_markdown": "",
+  "source_task_keys": ["policy_requirements"],
+  "source_result_ids": [],
+  "sort_order": 10
+}
+```
+
+### Read report section
+
+```text
+GET /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/{section_id}
+```
+
+Requires workspace read access.
+
 ## Permission Summary
 
 | Operation | Required permission |
@@ -760,6 +835,8 @@ edit. Successful review decisions also create an `AuditLog` record with action
 | Conversations and chat | workspace owner, admin, editor, reviewer, viewer |
 | List review queue | workspace owner, admin, reviewer |
 | Create review decision | workspace owner, admin, reviewer |
+| List/read reports and sections | workspace owner, admin, editor, reviewer, viewer |
+| Create reports and sections | workspace owner or admin |
 
 ## API Testing
 
