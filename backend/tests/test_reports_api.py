@@ -14,7 +14,7 @@ from backend.app.models.report import Report, ReportSection, ReportSectionStatus
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.report import ReportSectionGenerateRequest
-from backend.app.services.reports import ReportSectionGenerationError
+from backend.app.services.reports import ReportSectionGenerationError, ReportSectionSourceError
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES
 
 
@@ -268,6 +268,59 @@ def test_create_report_section_returns_created_section(monkeypatch: pytest.Monke
     assert body["message"] == "report section created"
     assert body["data"]["id"] == str(section.id)
     assert body["data"]["report_id"] == str(report.id)
+
+
+def test_create_report_section_returns_400_for_unreportable_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_create_report_section(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        section_create: object,
+    ) -> ReportSection:
+        raise ReportSectionSourceError("Report section source results must be approved or edited")
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "create_report_section", fake_create_report_section)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections",
+            json={
+                "title": "Executive Summary",
+                "source_result_ids": [str(uuid.uuid4())],
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "Report section source results must be approved or edited"
+    )
 
 
 def test_generate_report_section_returns_created_section(

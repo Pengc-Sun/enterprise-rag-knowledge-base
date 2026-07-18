@@ -12,6 +12,7 @@ from backend.app.schemas.report import (
 )
 from backend.app.services.reports import (
     ReportSectionGenerationError,
+    ReportSectionSourceError,
     create_report,
     create_report_section,
     generate_report_section_from_results,
@@ -238,7 +239,6 @@ async def test_create_report_section_persists_section() -> None:
             title="Executive Summary",
             body_markdown="Draft summary",
             source_task_keys=["policy_requirements"],
-            source_result_ids=[str(uuid.uuid4())],
             sort_order=10,
         ),
     )
@@ -250,6 +250,72 @@ async def test_create_report_section_persists_section() -> None:
     assert section.status == ReportSectionStatus.DRAFT.value
     assert session.added is section
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_report_section_accepts_approved_source_results() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    task = make_analysis_task(workspace_id)
+    analysis_result = make_analysis_result(workspace_id, task.id)
+    session = FakeSession([FakeResult(items=[(analysis_result, task)])])
+
+    section = await create_report_section(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report_id,
+        ReportSectionCreate(
+            title="Executive Summary",
+            body_markdown="Draft summary",
+            source_result_ids=[str(analysis_result.id), str(analysis_result.id)],
+        ),
+    )
+
+    assert section.source_result_ids == [str(analysis_result.id)]
+    assert session.added is section
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_report_section_rejects_invalid_source_result_id() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    session = FakeSession()
+
+    with pytest.raises(ReportSectionSourceError):
+        await create_report_section(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report_id,
+            ReportSectionCreate(
+                title="Executive Summary",
+                source_result_ids=["not-a-uuid"],
+            ),
+        )
+
+    assert session.added is None
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_create_report_section_rejects_unapproved_source_results() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    session = FakeSession([FakeResult(items=[])])
+
+    with pytest.raises(ReportSectionSourceError):
+        await create_report_section(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report_id,
+            ReportSectionCreate(
+                title="Executive Summary",
+                source_result_ids=[str(uuid.uuid4())],
+            ),
+        )
+
+    assert session.added is None
+    assert session.committed is False
 
 
 @pytest.mark.asyncio

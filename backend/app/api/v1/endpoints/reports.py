@@ -19,6 +19,7 @@ from backend.app.schemas.report import (
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.reports import (
     ReportSectionGenerationError,
+    ReportSectionSourceError,
     create_report,
     create_report_section,
     generate_report_section_from_results,
@@ -96,7 +97,13 @@ async def create_report_section_endpoint(
 ) -> APIResponse[ReportSectionRead]:
     await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
     await get_report_or_404(session, workspace_id, report_id)
-    section = await create_report_section(session, workspace_id, report_id, section_create)
+    try:
+        section = await create_report_section(session, workspace_id, report_id, section_create)
+    except ReportSectionSourceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return success_response(
         ReportSectionRead.model_validate(section),
         message="report section created",

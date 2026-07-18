@@ -21,7 +21,11 @@ REPORTABLE_ANALYSIS_RESULT_STATUSES = frozenset(
 )
 
 
-class ReportSectionGenerationError(ValueError):
+class ReportSectionSourceError(ValueError):
+    pass
+
+
+class ReportSectionGenerationError(ReportSectionSourceError):
     pass
 
 
@@ -107,6 +111,11 @@ async def create_report_section(
     report_id: uuid.UUID,
     section_create: ReportSectionCreate,
 ) -> ReportSection:
+    source_result_ids = await validate_report_section_source_results(
+        session,
+        workspace_id,
+        section_create.source_result_ids,
+    )
     section = ReportSection(
         workspace_id=workspace_id,
         report_id=report_id,
@@ -114,7 +123,7 @@ async def create_report_section(
         title=section_create.title,
         body_markdown=section_create.body_markdown,
         source_task_keys=section_create.source_task_keys,
-        source_result_ids=section_create.source_result_ids,
+        source_result_ids=source_result_ids,
         sort_order=section_create.sort_order,
         status=ReportSectionStatus.DRAFT.value,
     )
@@ -131,16 +140,7 @@ async def generate_report_section_from_results(
     generation: ReportSectionGenerateRequest,
 ) -> ReportSection:
     result_ids = _dedupe_uuids(generation.analysis_result_ids)
-    result = await session.execute(
-        select(AnalysisResult, AnalysisTask)
-        .join(AnalysisTask, AnalysisResult.analysis_task_id == AnalysisTask.id)
-        .where(
-            AnalysisResult.workspace_id == workspace_id,
-            AnalysisResult.id.in_(result_ids),
-            AnalysisResult.status.in_(REPORTABLE_ANALYSIS_RESULT_STATUSES),
-        )
-    )
-    rows = result.all()
+    rows = await _get_reportable_analysis_result_rows(session, workspace_id, result_ids)
     rows_by_id = {analysis_result.id: (analysis_result, task) for analysis_result, task in rows}
 
     missing_result_ids = [result_id for result_id in result_ids if result_id not in rows_by_id]
@@ -165,6 +165,59 @@ async def generate_report_section_from_results(
     await session.commit()
     await session.refresh(section)
     return section
+
+
+async def validate_report_section_source_results(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    source_result_ids: Iterable[str],
+) -> list[str]:
+    result_ids = _parse_source_result_ids(source_result_ids)
+    if not result_ids:
+        return []
+
+    rows = await _get_reportable_analysis_result_rows(session, workspace_id, result_ids)
+    reportable_result_ids = {analysis_result.id for analysis_result, _ in rows}
+    missing_result_ids = [
+        result_id for result_id in result_ids if result_id not in reportable_result_ids
+    ]
+    if missing_result_ids:
+        raise ReportSectionSourceError(
+            "Report section source results must exist in this workspace and be approved or edited"
+        )
+    return [str(result_id) for result_id in result_ids]
+
+
+async def _get_reportable_analysis_result_rows(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    result_ids: list[uuid.UUID],
+) -> list[tuple[AnalysisResult, AnalysisTask]]:
+    if not result_ids:
+        return []
+
+    result = await session.execute(
+        select(AnalysisResult, AnalysisTask)
+        .join(AnalysisTask, AnalysisResult.analysis_task_id == AnalysisTask.id)
+        .where(
+            AnalysisResult.workspace_id == workspace_id,
+            AnalysisResult.id.in_(result_ids),
+            AnalysisResult.status.in_(REPORTABLE_ANALYSIS_RESULT_STATUSES),
+        )
+    )
+    return [(analysis_result, task) for analysis_result, task in result.all()]
+
+
+def _parse_source_result_ids(source_result_ids: Iterable[str]) -> list[uuid.UUID]:
+    parsed_ids: list[uuid.UUID] = []
+    for source_result_id in source_result_ids:
+        try:
+            parsed_ids.append(uuid.UUID(source_result_id))
+        except ValueError as exc:
+            raise ReportSectionSourceError(
+                "Report section source results must be valid UUIDs"
+            ) from exc
+    return _dedupe_uuids(parsed_ids)
 
 
 def _dedupe_uuids(values: Iterable[uuid.UUID]) -> list[uuid.UUID]:

@@ -750,8 +750,9 @@ edit. Successful review decisions also create an `AuditLog` record with action
 ## Report Endpoints
 
 Report endpoints are workspace-scoped and require authentication. Reports start as drafts. Draft
-sections can be created manually or generated from approved reviewer content; later report workflow
-days add preview, editing, ordering, and exports.
+sections can be created manually or generated from approved reviewer content. Any section
+`source_result_ids` must point to same-workspace analysis results with status `approved` or `edited`;
+later report workflow days add preview, editing, ordering, and exports.
 
 ### List reports
 
@@ -799,7 +800,9 @@ Requires workspace read access.
 POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections
 ```
 
-Requires workspace owner or admin. New sections are created as `draft`.
+Requires workspace owner or admin. New sections are created as `draft`. If `source_result_ids` are
+provided, every referenced analysis result must belong to the same workspace and be `approved` or
+`edited`.
 
 Request body:
 
