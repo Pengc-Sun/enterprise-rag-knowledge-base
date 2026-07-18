@@ -23,6 +23,7 @@ from backend.app.services.analysis_tasks import (
     AnalysisCitationValidationError,
     AnalysisOutputValidationError,
     ReviewDecisionValidationError,
+    apply_review_decision_to_result,
     build_analysis_context_statement,
     build_deterministic_structured_analysis_result,
     build_structured_analysis_messages,
@@ -522,6 +523,49 @@ async def test_create_review_decision_for_result_requests_changes() -> None:
 
     assert result.status == AnalysisResultStatus.NEEDS_REVIEW.value
     assert decision.decision == ReviewDecisionType.REQUEST_CHANGES.value
+
+
+@pytest.mark.parametrize(
+    ("decision_create", "expected_status", "expected_result"),
+    [
+        (
+            ReviewDecisionCreate(decision=ReviewDecisionType.APPROVE),
+            AnalysisResultStatus.APPROVED.value,
+            {"requirements": [{"requirement": "Submit receipts"}]},
+        ),
+        (
+            ReviewDecisionCreate(
+                decision=ReviewDecisionType.EDIT,
+                edited_result={"requirements": [{"requirement": "Submit itemized receipts"}]},
+            ),
+            AnalysisResultStatus.EDITED.value,
+            {"requirements": [{"requirement": "Submit itemized receipts"}]},
+        ),
+        (
+            ReviewDecisionCreate(decision=ReviewDecisionType.REJECT),
+            AnalysisResultStatus.REJECTED.value,
+            {"requirements": [{"requirement": "Submit receipts"}]},
+        ),
+        (
+            ReviewDecisionCreate(decision=ReviewDecisionType.REQUEST_CHANGES),
+            AnalysisResultStatus.NEEDS_REVIEW.value,
+            {"requirements": [{"requirement": "Submit receipts"}]},
+        ),
+    ],
+)
+def test_apply_review_decision_to_result_state_transition_matrix(
+    decision_create: ReviewDecisionCreate,
+    expected_status: str,
+    expected_result: dict[str, object],
+) -> None:
+    result = make_result(uuid.uuid4(), uuid.uuid4())
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+    result.result = {"requirements": [{"requirement": "Submit receipts"}]}
+
+    apply_review_decision_to_result(result, decision_create)
+
+    assert result.status == expected_status
+    assert result.result == expected_result
 
 
 @pytest.mark.asyncio

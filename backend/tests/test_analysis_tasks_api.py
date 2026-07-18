@@ -679,6 +679,57 @@ def test_list_review_queue_returns_filtered_items(
     assert body["data"][0]["analysis_task"]["name"] == task.name
 
 
+def test_list_review_queue_requires_reviewer_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> None:
+        assert allowed_roles == REVIEW_ROLES
+        return None
+
+    async def fake_list_review_queue_results(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        *,
+        status: AnalysisResultStatus | None = None,
+        analysis_task_id: uuid.UUID | None = None,
+        task_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[tuple[AnalysisResult, AnalysisTask]]:
+        pytest.fail("review queue must not be listed when review access is denied")
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "list_review_queue_results",
+        fake_list_review_queue_results,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace_id}/analysis-tasks/review-queue"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace not found"
+
+
 def test_create_review_decision_requires_reviewer_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

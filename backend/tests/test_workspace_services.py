@@ -211,6 +211,38 @@ def test_review_roles_allow_reviewers_but_not_editors_or_viewers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_workspace_for_user_allows_reviewer_for_review_roles() -> None:
+    workspace = make_workspace()
+    reviewer_id = uuid.uuid4()
+    session = FakePermissionSession((workspace, WorkspaceMemberRole.REVIEWER.value))
+
+    result = await get_workspace_for_user(
+        session,  # type: ignore[arg-type]
+        workspace.id,
+        reviewer_id,
+        REVIEW_ROLES,
+    )
+
+    assert result is workspace
+
+
+@pytest.mark.asyncio
+async def test_get_workspace_for_user_denies_editor_for_review_roles() -> None:
+    workspace = make_workspace()
+    editor_id = uuid.uuid4()
+    session = FakePermissionSession((workspace, WorkspaceMemberRole.EDITOR.value))
+
+    result = await get_workspace_for_user(
+        session,  # type: ignore[arg-type]
+        workspace.id,
+        editor_id,
+        REVIEW_ROLES,
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_get_workspace_for_user_returns_none_when_missing() -> None:
     session = FakePermissionSession(None)
 
