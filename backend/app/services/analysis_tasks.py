@@ -207,7 +207,12 @@ async def create_review_decision_for_result(
     reviewer_id: uuid.UUID,
     decision_create: ReviewDecisionCreate,
 ) -> ReviewDecision:
-    original_result = deepcopy(analysis_result.result)
+    original_result = await get_original_result_snapshot(
+        session,
+        workspace_id,
+        analysis_result.id,
+        analysis_result.result,
+    )
     apply_review_decision_to_result(analysis_result, decision_create)
     review_decision = ReviewDecision(
         workspace_id=workspace_id,
@@ -216,12 +221,33 @@ async def create_review_decision_for_result(
         decision=decision_create.decision.value,
         comment=decision_create.comment,
         original_result=original_result,
-        edited_result=decision_create.edited_result,
+        edited_result=deepcopy(decision_create.edited_result),
     )
     session.add(review_decision)
     await session.commit()
     await session.refresh(review_decision)
     return review_decision
+
+
+async def get_original_result_snapshot(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    analysis_result_id: uuid.UUID,
+    current_result: dict[str, object],
+) -> dict[str, object]:
+    result = await session.execute(
+        select(ReviewDecision)
+        .where(
+            ReviewDecision.workspace_id == workspace_id,
+            ReviewDecision.analysis_result_id == analysis_result_id,
+        )
+        .order_by(ReviewDecision.created_at.asc())
+        .limit(1)
+    )
+    first_decision = result.scalar_one_or_none()
+    if first_decision is None:
+        return deepcopy(current_result)
+    return deepcopy(first_decision.original_result)
 
 
 def apply_review_decision_to_result(

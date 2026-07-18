@@ -351,7 +351,7 @@ async def test_create_review_decision_for_result_snapshots_original_result() -> 
     reviewer_id = uuid.uuid4()
     result = make_result(workspace_id, task_id)
     result.result = {"requirements": [{"requirement": "Submit receipts"}]}
-    session = FakeSession()
+    session = FakeSession([FakeResult(scalar=None)])
 
     decision = await create_review_decision_for_result(
         session,  # type: ignore[arg-type]
@@ -387,7 +387,7 @@ async def test_create_review_decision_for_result_applies_edit() -> None:
     edited_result: dict[str, object] = {
         "requirements": [{"requirement": "Submit itemized receipts"}]
     }
-    session = FakeSession()
+    session = FakeSession([FakeResult(scalar=None)])
 
     decision = await create_review_decision_for_result(
         session,  # type: ignore[arg-type]
@@ -408,13 +408,53 @@ async def test_create_review_decision_for_result_applies_edit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_review_decision_for_result_preserves_first_original_across_edits() -> None:
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    reviewer_id = uuid.uuid4()
+    result = make_result(workspace_id, task_id)
+    original_ai_result: dict[str, object] = {
+        "requirements": [{"requirement": "Submit receipts"}]
+    }
+    first_edit_result: dict[str, object] = {
+        "requirements": [{"requirement": "Submit itemized receipts"}]
+    }
+    second_edit_result: dict[str, object] = {
+        "requirements": [{"requirement": "Submit itemized receipts and proof of payment"}]
+    }
+    result.status = AnalysisResultStatus.EDITED.value
+    result.result = first_edit_result
+    previous_decision = make_review_decision(workspace_id, result.id)
+    previous_decision.original_result = original_ai_result
+    previous_decision.edited_result = first_edit_result
+    session = FakeSession([FakeResult(scalar=previous_decision)])
+
+    decision = await create_review_decision_for_result(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        result,
+        reviewer_id,
+        ReviewDecisionCreate(
+            decision=ReviewDecisionType.EDIT,
+            comment="Added proof of payment.",
+            edited_result=second_edit_result,
+        ),
+    )
+
+    assert result.status == AnalysisResultStatus.EDITED.value
+    assert result.result == second_edit_result
+    assert decision.original_result == original_ai_result
+    assert decision.edited_result == second_edit_result
+
+
+@pytest.mark.asyncio
 async def test_create_review_decision_for_result_rejects_result() -> None:
     workspace_id = uuid.uuid4()
     task_id = uuid.uuid4()
     reviewer_id = uuid.uuid4()
     result = make_result(workspace_id, task_id)
     result.status = AnalysisResultStatus.NEEDS_REVIEW.value
-    session = FakeSession()
+    session = FakeSession([FakeResult(scalar=None)])
 
     decision = await create_review_decision_for_result(
         session,  # type: ignore[arg-type]
@@ -438,7 +478,7 @@ async def test_create_review_decision_for_result_requests_changes() -> None:
     reviewer_id = uuid.uuid4()
     result = make_result(workspace_id, task_id)
     result.status = AnalysisResultStatus.APPROVED.value
-    session = FakeSession()
+    session = FakeSession([FakeResult(scalar=None)])
 
     decision = await create_review_decision_for_result(
         session,  # type: ignore[arg-type]
@@ -463,7 +503,7 @@ async def test_create_review_decision_for_result_requires_edit_payload() -> None
     result = make_result(workspace_id, task_id)
     result.status = AnalysisResultStatus.NEEDS_REVIEW.value
     original_result = result.result
-    session = FakeSession()
+    session = FakeSession([FakeResult(scalar=None)])
 
     with pytest.raises(ReviewDecisionValidationError):
         await create_review_decision_for_result(
