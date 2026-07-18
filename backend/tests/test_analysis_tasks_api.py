@@ -12,6 +12,7 @@ from backend.app.db.session import get_db_session
 from backend.app.main import app
 from backend.app.models.analysis import (
     AnalysisResult,
+    AnalysisResultStatus,
     AnalysisTask,
     ReviewDecision,
     ReviewDecisionType,
@@ -607,6 +608,77 @@ def test_create_review_decision_returns_created_decision(
     assert body["data"]["reviewer_id"] == str(user.id)
 
 
+def test_list_review_queue_returns_filtered_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    task = make_task(workspace.id, user.id)
+    result = make_result(workspace.id, task.id)
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == REVIEW_ROLES
+        return workspace
+
+    async def fake_list_review_queue_results(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        *,
+        status: AnalysisResultStatus | None = None,
+        analysis_task_id: uuid.UUID | None = None,
+        task_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[tuple[AnalysisResult, AnalysisTask]]:
+        assert workspace_id == workspace.id
+        assert status == AnalysisResultStatus.NEEDS_REVIEW
+        assert analysis_task_id == task.id
+        assert task_type == "extraction"
+        assert limit == 10
+        assert offset == 5
+        return [(result, task)]
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "list_review_queue_results",
+        fake_list_review_queue_results,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/analysis-tasks/review-queue",
+            params={
+                "status": "needs_review",
+                "analysis_task_id": str(task.id),
+                "task_type": "extraction",
+                "limit": "10",
+                "offset": "5",
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"][0]["analysis_result"]["id"] == str(result.id)
+    assert body["data"][0]["analysis_result"]["status"] == "needs_review"
+    assert body["data"][0]["analysis_task"]["id"] == str(task.id)
+    assert body["data"][0]["analysis_task"]["name"] == task.name
+
+
 def test_create_review_decision_requires_reviewer_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -851,3 +923,4 @@ def test_analysis_task_routes_are_registered_in_openapi() -> None:
         "/api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/results/"
         "{analysis_result_id}/review-decisions"
     ) in paths
+    assert "/api/v1/workspaces/{workspace_id}/analysis-tasks/review-queue" in paths

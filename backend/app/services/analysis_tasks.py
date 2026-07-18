@@ -50,6 +50,12 @@ The JSON object must include:
 - citations: array of citation objects referencing provided chunk_id values
 - confidence: number between 0 and 1, or null
 """
+DEFAULT_REVIEW_QUEUE_STATUSES = frozenset(
+    {
+        AnalysisResultStatus.AI_GENERATED.value,
+        AnalysisResultStatus.NEEDS_REVIEW.value,
+    }
+)
 
 
 class AnalysisOutputValidationError(LLMProviderResponseError):
@@ -166,6 +172,43 @@ async def create_analysis_result_for_task(
     await session.commit()
     await session.refresh(analysis_result)
     return analysis_result
+
+
+async def list_review_queue_results(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    status: AnalysisResultStatus | None = None,
+    analysis_task_id: uuid.UUID | None = None,
+    task_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[tuple[AnalysisResult, AnalysisTask]]:
+    statuses = (
+        [status.value] if status is not None else sorted(DEFAULT_REVIEW_QUEUE_STATUSES)
+    )
+    statement = (
+        select(AnalysisResult, AnalysisTask)
+        .join(AnalysisTask, AnalysisResult.analysis_task_id == AnalysisTask.id)
+        .where(
+            AnalysisResult.workspace_id == workspace_id,
+            AnalysisTask.workspace_id == workspace_id,
+            AnalysisResult.status.in_(statuses),
+        )
+        .order_by(AnalysisResult.created_at.asc(), AnalysisResult.id.asc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if analysis_task_id is not None:
+        statement = statement.where(AnalysisResult.analysis_task_id == analysis_task_id)
+    if task_type is not None:
+        statement = statement.where(AnalysisTask.task_type == task_type)
+
+    result = await session.execute(statement)
+    return [
+        (cast(AnalysisResult, row[0]), cast(AnalysisTask, row[1]))
+        for row in result.all()
+    ]
 
 
 async def list_review_decisions_for_result(

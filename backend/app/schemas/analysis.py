@@ -73,3 +73,8 @@ class ReviewDecisionRead(ReviewDecisionBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AnalysisReviewQueueItemRead(BaseModel):
+    analysis_result: AnalysisResultRead
+    analysis_task: AnalysisTaskRead

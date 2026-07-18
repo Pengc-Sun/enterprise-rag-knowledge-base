@@ -1,19 +1,25 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.errors import provider_exception_to_http
 from backend.app.core.config import get_settings
 from backend.app.db.session import get_db_session
-from backend.app.models.analysis import AnalysisResult, AnalysisTask, ReviewDecision
+from backend.app.models.analysis import (
+    AnalysisResult,
+    AnalysisResultStatus,
+    AnalysisTask,
+    ReviewDecision,
+)
 from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.analysis import (
     AnalysisResultCreate,
     AnalysisResultRead,
+    AnalysisReviewQueueItemRead,
     AnalysisTaskCreate,
     AnalysisTaskRead,
     ReviewDecisionCreate,
@@ -31,6 +37,7 @@ from backend.app.services.analysis_tasks import (
     get_workspace_analysis_task,
     list_analysis_results_for_task,
     list_review_decisions_for_result,
+    list_review_queue_results,
     list_workspace_analysis_tasks,
 )
 from backend.app.services.llms import LLMProviderError, create_llm_provider
@@ -79,6 +86,41 @@ async def create_workspace_analysis_task_endpoint(
     return success_response(
         AnalysisTaskRead.model_validate(task),
         message="analysis task created",
+    )
+
+
+@router.get(
+    "/review-queue",
+    response_model=APIResponse[list[AnalysisReviewQueueItemRead]],
+)
+async def list_review_queue_endpoint(
+    workspace_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    status: AnalysisResultStatus | None = None,
+    analysis_task_id: uuid.UUID | None = None,
+    task_type: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> APIResponse[list[AnalysisReviewQueueItemRead]]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, REVIEW_ROLES)
+    queue_items = await list_review_queue_results(
+        session,
+        workspace_id,
+        status=status,
+        analysis_task_id=analysis_task_id,
+        task_type=task_type,
+        limit=limit,
+        offset=offset,
+    )
+    return success_response(
+        [
+            AnalysisReviewQueueItemRead(
+                analysis_result=AnalysisResultRead.model_validate(analysis_result),
+                analysis_task=AnalysisTaskRead.model_validate(analysis_task),
+            )
+            for analysis_result, analysis_task in queue_items
+        ]
     )
 
 

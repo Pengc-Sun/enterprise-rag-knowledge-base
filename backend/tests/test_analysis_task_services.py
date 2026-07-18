@@ -35,6 +35,7 @@ from backend.app.services.analysis_tasks import (
     get_workspace_analysis_task,
     list_analysis_results_for_task,
     list_review_decisions_for_result,
+    list_review_queue_results,
     list_workspace_analysis_tasks,
     normalize_structured_analysis_output,
     parse_structured_analysis_response,
@@ -70,6 +71,9 @@ class FakeResult:
 
     def scalar_one_or_none(self) -> object | None:
         return self.scalar
+
+    def all(self) -> list[object]:
+        return self.items
 
 
 class FakeSession:
@@ -324,6 +328,31 @@ async def test_list_analysis_results_for_task_returns_results() -> None:
 
     assert results == [result]
     assert session.statements
+
+
+@pytest.mark.asyncio
+async def test_list_review_queue_results_returns_filtered_result_task_pairs() -> None:
+    workspace_id = uuid.uuid4()
+    task = make_task(workspace_id)
+    result = make_result(workspace_id, task.id)
+    result.status = AnalysisResultStatus.NEEDS_REVIEW.value
+    session = FakeSession([FakeResult(items=[(result, task)])])
+
+    queue_items = await list_review_queue_results(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        status=AnalysisResultStatus.NEEDS_REVIEW,
+        analysis_task_id=task.id,
+        task_type="extraction",
+        limit=10,
+        offset=5,
+    )
+
+    assert queue_items == [(result, task)]
+    statement_text = str(session.statements[0])
+    assert "analysis_results.status" in statement_text
+    assert "analysis_results.analysis_task_id" in statement_text
+    assert "analysis_tasks.task_type" in statement_text
 
 
 @pytest.mark.asyncio
