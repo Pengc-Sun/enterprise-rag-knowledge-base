@@ -786,6 +786,27 @@ GET /api/v1/workspaces/{workspace_id}/reports/{report_id}
 
 Requires workspace read access.
 
+### Preview report
+
+```text
+GET /api/v1/workspaces/{workspace_id}/reports/{report_id}/preview
+```
+
+Requires workspace read access. Returns the current report title and ordered sections as Markdown.
+
+Response data:
+
+```json
+{
+  "report_id": "80d2854c-96c9-466c-9360-71116f1c49c0",
+  "workspace_id": "f196aa9b-32b9-4d37-9343-f7efe7182b42",
+  "title": "Policy Review Report",
+  "status": "draft",
+  "section_count": 2,
+  "markdown": "# Policy Review Report\n\n## Policy Requirements\n\n..."
+}
+```
+
 ### List report sections
 
 ```text

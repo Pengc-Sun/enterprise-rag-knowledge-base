@@ -11,6 +11,7 @@ from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportPreviewRead,
     ReportRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
@@ -20,6 +21,7 @@ from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.reports import (
     ReportSectionGenerationError,
     ReportSectionSourceError,
+    build_report_preview,
     create_report,
     create_report_section,
     generate_report_section_from_results,
@@ -66,6 +68,19 @@ async def read_report_endpoint(
     await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
     report = await get_report_or_404(session, workspace_id, report_id)
     return success_response(ReportRead.model_validate(report))
+
+
+@router.get("/{report_id}/preview", response_model=APIResponse[ReportPreviewRead])
+async def preview_report_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportPreviewRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    report = await get_report_or_404(session, workspace_id, report_id)
+    preview = await build_report_preview(session, workspace_id, report)
+    return success_response(preview)
 
 
 @router.get("/{report_id}/sections", response_model=APIResponse[list[ReportSectionRead]])

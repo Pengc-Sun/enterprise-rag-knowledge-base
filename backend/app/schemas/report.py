@@ -25,6 +25,15 @@ class ReportRead(ReportBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ReportPreviewRead(BaseModel):
+    report_id: uuid.UUID
+    workspace_id: uuid.UUID
+    title: str
+    status: ReportStatus
+    section_count: int
+    markdown: str
+
+
 class ReportSectionBase(BaseModel):
     template_section_key: str | None = Field(default=None, max_length=100)
     title: str = Field(min_length=1, max_length=255)

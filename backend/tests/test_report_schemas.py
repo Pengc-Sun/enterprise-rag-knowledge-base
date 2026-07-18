@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportPreviewRead,
     ReportRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
@@ -41,6 +42,25 @@ def test_report_read_serializes_model_status() -> None:
 
     assert payload.id == report.id
     assert payload.status == ReportStatus.READY
+
+
+def test_report_preview_read_accepts_markdown_payload() -> None:
+    report_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+
+    payload = ReportPreviewRead(
+        report_id=report_id,
+        workspace_id=workspace_id,
+        title="Policy Review Report",
+        status=ReportStatus.DRAFT,
+        section_count=1,
+        markdown="# Policy Review Report\n",
+    )
+
+    assert payload.report_id == report_id
+    assert payload.workspace_id == workspace_id
+    assert payload.status == ReportStatus.DRAFT
+    assert payload.markdown == "# Policy Review Report\n"
 
 
 def test_report_section_create_accepts_content_fields() -> None:

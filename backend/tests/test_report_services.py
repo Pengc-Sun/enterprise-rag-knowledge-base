@@ -13,6 +13,7 @@ from backend.app.schemas.report import (
 from backend.app.services.reports import (
     ReportSectionGenerationError,
     ReportSectionSourceError,
+    build_report_preview,
     create_report,
     create_report_section,
     generate_report_section_from_results,
@@ -20,6 +21,7 @@ from backend.app.services.reports import (
     get_report_section_for_report,
     list_report_sections_for_report,
     list_reports_for_workspace,
+    render_report_preview_markdown,
 )
 
 
@@ -223,6 +225,47 @@ async def test_get_report_section_for_report_returns_section() -> None:
 
     assert fetched is section
     assert session.statements
+
+
+@pytest.mark.asyncio
+async def test_build_report_preview_returns_ordered_markdown() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    first_section = make_section(workspace_id, report.id)
+    first_section.title = "Executive Summary"
+    first_section.body_markdown = "Approved summary."
+    second_section = make_section(workspace_id, report.id)
+    second_section.title = "Findings"
+    second_section.body_markdown = "Approved findings."
+    session = FakeSession([FakeResult(items=[first_section, second_section])])
+
+    preview = await build_report_preview(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report,
+    )
+
+    assert preview.report_id == report.id
+    assert preview.workspace_id == workspace_id
+    assert preview.title == "Policy Review Report"
+    assert preview.status == ReportStatus.DRAFT
+    assert preview.section_count == 2
+    assert preview.markdown == (
+        "# Policy Review Report\n\n"
+        "## Executive Summary\n\n"
+        "Approved summary.\n\n"
+        "## Findings\n\n"
+        "Approved findings.\n"
+    )
+
+
+def test_render_report_preview_markdown_handles_empty_sections() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+
+    markdown = render_report_preview_markdown(report, [])
+
+    assert markdown == "# Policy Review Report\n\n_No report sections yet._\n"
 
 
 @pytest.mark.asyncio

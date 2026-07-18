@@ -130,6 +130,8 @@ Authorization is enforced in service or endpoint logic through knowledge base an
 - Report and report section reads allow workspace read access; report and section creation require
   `owner` or `admin`. Report section source results must be in the same workspace and already
   `approved` or reviewer-`edited`.
+- Report preview uses read access and renders the current ordered sections as Markdown without
+  creating an export artifact.
 - Deleting a workspace requires `owner`.
 - Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 

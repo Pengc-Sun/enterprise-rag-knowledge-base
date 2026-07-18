@@ -9,6 +9,7 @@ from backend.app.models.analysis import AnalysisResult, AnalysisResultStatus, An
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportPreviewRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
 )
@@ -105,6 +106,22 @@ async def get_report_section_for_report(
     return result.scalar_one_or_none()
 
 
+async def build_report_preview(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    report: Report,
+) -> ReportPreviewRead:
+    sections = await list_report_sections_for_report(session, workspace_id, report.id)
+    return ReportPreviewRead(
+        report_id=report.id,
+        workspace_id=workspace_id,
+        title=report.title,
+        status=ReportStatus(report.status),
+        section_count=len(sections),
+        markdown=render_report_preview_markdown(report, sections),
+    )
+
+
 async def create_report_section(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -131,6 +148,25 @@ async def create_report_section(
     await session.commit()
     await session.refresh(section)
     return section
+
+
+def render_report_preview_markdown(
+    report: Report,
+    sections: Iterable[ReportSection],
+) -> str:
+    lines = [f"# {_markdown_heading_text(report.title)}", ""]
+    section_list = list(sections)
+    if not section_list:
+        lines.append("_No report sections yet._")
+        return "\n".join(lines).strip() + "\n"
+
+    for section in section_list:
+        lines.extend([f"## {_markdown_heading_text(section.title)}", ""])
+        body_markdown = section.body_markdown.strip()
+        lines.append(body_markdown or "_No content yet._")
+        lines.append("")
+
+    return "\n".join(lines).strip() + "\n"
 
 
 async def generate_report_section_from_results(
@@ -292,3 +328,7 @@ def _collect_source_task_keys(tasks: Iterable[AnalysisTask]) -> list[str]:
             keys.append(task.template_task_key)
             seen.add(task.template_task_key)
     return keys
+
+
+def _markdown_heading_text(value: str) -> str:
+    return " ".join(value.split()).strip() or "Untitled"
