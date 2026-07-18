@@ -34,7 +34,12 @@ from backend.app.services.analysis_tasks import (
     list_workspace_analysis_tasks,
 )
 from backend.app.services.llms import LLMProviderError, create_llm_provider
-from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES, get_workspace_for_user
+from backend.app.services.workspaces import (
+    READ_ROLES,
+    REVIEW_ROLES,
+    WRITE_ROLES,
+    get_workspace_for_user,
+)
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/analysis-tasks",
@@ -225,7 +230,7 @@ async def create_review_decision_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> APIResponse[ReviewDecisionRead]:
-    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    await get_workspace_or_404(session, workspace_id, current_user.id, REVIEW_ROLES)
     await get_analysis_task_or_404(session, workspace_id, analysis_task_id)
     analysis_result = await get_analysis_result_or_404(
         session,

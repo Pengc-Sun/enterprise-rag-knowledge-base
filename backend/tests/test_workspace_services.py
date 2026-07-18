@@ -15,6 +15,7 @@ from backend.app.services.workspaces import (
     DEFAULT_WORKSPACE_SLUG_PREFIX,
     OWNER_ROLES,
     READ_ROLES,
+    REVIEW_ROLES,
     WRITE_ROLES,
     WorkspaceMemberRoleError,
     WorkspaceOwnerMemberError,
@@ -199,6 +200,14 @@ async def test_get_workspace_for_user_denies_viewer_for_write_roles() -> None:
     assert result is None
     assert "viewer" in READ_ROLES
     assert "viewer" not in WRITE_ROLES
+
+
+def test_review_roles_allow_reviewers_but_not_editors_or_viewers() -> None:
+    assert WorkspaceMemberRole.OWNER.value in REVIEW_ROLES
+    assert WorkspaceMemberRole.ADMIN.value in REVIEW_ROLES
+    assert WorkspaceMemberRole.REVIEWER.value in REVIEW_ROLES
+    assert WorkspaceMemberRole.EDITOR.value not in REVIEW_ROLES
+    assert WorkspaceMemberRole.VIEWER.value not in REVIEW_ROLES
 
 
 @pytest.mark.asyncio

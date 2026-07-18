@@ -23,6 +23,7 @@ from backend.app.services.analysis_tasks import (
     ReviewDecisionValidationError,
 )
 from backend.app.services.llms import LLMProviderTimeoutError
+from backend.app.services.workspaces import READ_ROLES, REVIEW_ROLES, WRITE_ROLES
 
 
 def make_user() -> User:
@@ -175,6 +176,7 @@ def test_create_analysis_task_returns_created_task(monkeypatch: pytest.MonkeyPat
         user_id: uuid.UUID,
         allowed_roles: frozenset[str],
     ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
         return workspace
 
     async def fake_create_workspace_analysis_task(
@@ -233,6 +235,7 @@ def test_read_analysis_task_returns_404_for_cross_workspace_task(
         user_id: uuid.UUID,
         allowed_roles: frozenset[str],
     ) -> Workspace:
+        assert allowed_roles == READ_ROLES
         return workspace
 
     async def fake_get_workspace_analysis_task(
@@ -278,6 +281,7 @@ def test_create_analysis_result_returns_structured_result(
         user_id: uuid.UUID,
         allowed_roles: frozenset[str],
     ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
         return workspace
 
     async def fake_get_workspace_analysis_task(
@@ -533,6 +537,7 @@ def test_create_review_decision_returns_created_decision(
         user_id: uuid.UUID,
         allowed_roles: frozenset[str],
     ) -> Workspace:
+        assert allowed_roles == REVIEW_ROLES
         return workspace
 
     async def fake_get_workspace_analysis_task(
@@ -602,6 +607,83 @@ def test_create_review_decision_returns_created_decision(
     assert body["data"]["reviewer_id"] == str(user.id)
 
 
+def test_create_review_decision_requires_reviewer_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    result_id = uuid.uuid4()
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> None:
+        assert allowed_roles == REVIEW_ROLES
+        return None
+
+    async def fake_get_workspace_analysis_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+    ) -> AnalysisTask:
+        pytest.fail("analysis task must not be loaded when review access is denied")
+
+    async def fake_get_analysis_result_for_task(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_task_id: uuid.UUID,
+        analysis_result_id: uuid.UUID,
+    ) -> AnalysisResult:
+        pytest.fail("analysis result must not be loaded when review access is denied")
+
+    async def fake_create_review_decision_for_result(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        analysis_result: AnalysisResult,
+        reviewer_id: uuid.UUID,
+        decision_create: object,
+    ) -> ReviewDecision:
+        pytest.fail("review decision must not be created when review access is denied")
+
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_for_user",
+        fake_get_workspace_for_user,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_workspace_analysis_task",
+        fake_get_workspace_analysis_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "get_analysis_result_for_task",
+        fake_get_analysis_result_for_task,
+    )
+    monkeypatch.setattr(
+        analysis_task_endpoints,
+        "create_review_decision_for_result",
+        fake_create_review_decision_for_result,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace_id}/analysis-tasks/{task_id}"
+            f"/results/{result_id}/review-decisions",
+            json={"decision": "approve"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Workspace not found"
+
+
 def test_create_review_decision_returns_400_for_invalid_action_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -616,6 +698,7 @@ def test_create_review_decision_returns_400_for_invalid_action_payload(
         user_id: uuid.UUID,
         allowed_roles: frozenset[str],
     ) -> Workspace:
+        assert allowed_roles == REVIEW_ROLES
         return workspace
 
     async def fake_get_workspace_analysis_task(

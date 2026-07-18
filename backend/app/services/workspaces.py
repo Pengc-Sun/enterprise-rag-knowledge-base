@@ -37,6 +37,13 @@ WRITE_ROLES = frozenset(
         WorkspaceMemberRole.ADMIN.value,
     }
 )
+REVIEW_ROLES = frozenset(
+    {
+        WorkspaceMemberRole.OWNER.value,
+        WorkspaceMemberRole.ADMIN.value,
+        WorkspaceMemberRole.REVIEWER.value,
+    }
+)
 OWNER_ROLES = frozenset({WorkspaceMemberRole.OWNER.value})
 MEMBER_MANAGEMENT_ROLES = WRITE_ROLES
 DEFAULT_WORKSPACE_NAME = "Default Workspace"
