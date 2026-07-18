@@ -45,6 +45,7 @@ docs/demo-data/travel_policy_demo.md
 docs/demo-data/security_handbook_demo.md
 docs/demo-data/engineering_workflow_demo.md
 docs/demo-data/support_sla_demo.md
+docs/demo-data/report_workflow_demo.md
 ```
 
 Suggested demo account:
@@ -121,6 +122,7 @@ Optional additional uploads:
 docs/demo-data/security_handbook_demo.md
 docs/demo-data/engineering_workflow_demo.md
 docs/demo-data/support_sla_demo.md
+docs/demo-data/report_workflow_demo.md
 ```
 
 Wait until status shows `completed` and chunk count is greater than zero.
@@ -148,6 +150,29 @@ Open the citation card or detail modal. Highlight:
 - chunk ID
 - original text
 - similarity or rerank score
+
+### v2.0 report workflow extension
+
+For a longer v2.0 demo, use `docs/demo-data/report_workflow_demo.md` after the baseline RAG flow.
+
+Suggested sequence:
+
+1. Create a workspace from a template with analysis tasks and report sections.
+2. Upload `report_workflow_demo.md`.
+3. Run the template analysis tasks.
+4. Approve one result and reviewer-edit another result.
+5. Reject or leave one result in `needs_review`.
+6. Generate draft report sections from the approved and edited results.
+7. Try to reference the rejected or unreviewed result and confirm the API blocks it.
+8. Reorder sections and open the Markdown report preview.
+
+Narration:
+
+```text
+The v2.0 workflow adds human review before formal report generation. Only approved or
+reviewer-edited analysis results can become report section sources, so rejected and unreviewed AI
+outputs are blocked from the final report preview.
+```
 
 ### 7. Ask follow-up question
 

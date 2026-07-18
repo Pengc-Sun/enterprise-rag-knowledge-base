@@ -587,6 +587,17 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Review workflow, permissions, queue behavior, and audit logging are documented.
 - Week 6 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
 
+## v2.0 Week 7 Acceptance Status
+
+- Workspace-scoped report and report section APIs support create, read, update, list, and section ordering workflows.
+- Draft report sections can be generated from approved or reviewer-edited analysis results.
+- Manual report sections and section source updates enforce same-workspace `approved` or `edited` analysis result references.
+- Rejected, unreviewed, malformed, and cross-workspace result references are blocked from report sections.
+- Markdown report preview renders the current ordered report sections without creating an export artifact.
+- Approved-content rule tests cover allowed statuses, blocked statuses, mixed generated sources, cross-workspace references, cleared sources, and omitted source updates.
+- Synthetic report workflow demo data is available in `docs/demo-data/report_workflow_demo.md`.
+- Week 7 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
+
 ## CI
 
 GitHub Actions runs on pushes to `main` and pull requests. The workflow checks backend tests, Ruff, mypy, frontend typecheck/build, and production Docker image builds.
