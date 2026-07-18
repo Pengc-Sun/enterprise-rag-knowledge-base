@@ -786,6 +786,22 @@ GET /api/v1/workspaces/{workspace_id}/reports/{report_id}
 
 Requires workspace read access.
 
+### Update report
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}/reports/{report_id}
+```
+
+Requires workspace owner or admin.
+
+Request body:
+
+```json
+{
+  "title": "Updated Policy Review Report"
+}
+```
+
 ### Preview report
 
 ```text
@@ -856,6 +872,52 @@ Request body:
   "template_section_key": "requirements",
   "title": "Policy Requirements",
   "sort_order": 10
+}
+```
+
+### Reorder report sections
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/reorder
+```
+
+Requires workspace owner or admin. Every section ID must belong to the current report.
+
+Request body:
+
+```json
+{
+  "sections": [
+    {
+      "section_id": "c65bf272-6479-4534-b491-5b0a5d6e5aa3",
+      "sort_order": 10
+    },
+    {
+      "section_id": "1f04f2f1-f12a-4797-95b0-16e3279358dd",
+      "sort_order": 20
+    }
+  ]
+}
+```
+
+### Update report section
+
+```text
+PATCH /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/{section_id}
+```
+
+Requires workspace owner or admin. Supports partial updates to `template_section_key`, `title`,
+`body_markdown`, `source_task_keys`, `source_result_ids`, and `sort_order`. If `source_result_ids`
+are provided, every referenced analysis result must belong to the same workspace and be `approved`
+or `edited`.
+
+Request body:
+
+```json
+{
+  "title": "Updated Policy Requirements",
+  "body_markdown": "Updated reviewer-approved content.",
+  "sort_order": 20
 }
 ```
 

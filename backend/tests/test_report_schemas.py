@@ -11,7 +11,11 @@ from backend.app.schemas.report import (
     ReportRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
+    ReportSectionOrderItem,
     ReportSectionRead,
+    ReportSectionReorderRequest,
+    ReportSectionUpdate,
+    ReportUpdate,
 )
 
 
@@ -24,6 +28,12 @@ def test_report_create_accepts_title() -> None:
 def test_report_create_rejects_empty_title() -> None:
     with pytest.raises(ValidationError):
         ReportCreate(title="")
+
+
+def test_report_update_accepts_partial_title_update() -> None:
+    update = ReportUpdate(title="Updated Report")
+
+    assert update.title == "Updated Report"
 
 
 def test_report_read_serializes_model_status() -> None:
@@ -91,6 +101,29 @@ def test_report_section_generate_request_accepts_generation_options() -> None:
     assert payload.template_section_key == "findings"
     assert payload.title == "Findings"
     assert payload.sort_order == 20
+
+
+def test_report_section_update_accepts_partial_content_update() -> None:
+    update = ReportSectionUpdate(body_markdown="Updated content", sort_order=30)
+
+    assert update.body_markdown == "Updated content"
+    assert update.sort_order == 30
+
+
+def test_report_section_reorder_request_requires_sections() -> None:
+    with pytest.raises(ValidationError):
+        ReportSectionReorderRequest(sections=[])
+
+
+def test_report_section_reorder_request_accepts_order_items() -> None:
+    section_id = uuid.uuid4()
+
+    payload = ReportSectionReorderRequest(
+        sections=[ReportSectionOrderItem(section_id=section_id, sort_order=10)]
+    )
+
+    assert payload.sections[0].section_id == section_id
+    assert payload.sections[0].sort_order == 10
 
 
 def test_report_section_read_serializes_model() -> None:

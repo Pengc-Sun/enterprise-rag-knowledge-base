@@ -12,6 +12,9 @@ from backend.app.schemas.report import (
     ReportPreviewRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
+    ReportSectionReorderRequest,
+    ReportSectionUpdate,
+    ReportUpdate,
 )
 
 REPORTABLE_ANALYSIS_RESULT_STATUSES = frozenset(
@@ -27,6 +30,10 @@ class ReportSectionSourceError(ValueError):
 
 
 class ReportSectionGenerationError(ReportSectionSourceError):
+    pass
+
+
+class ReportSectionOrderingError(ValueError):
     pass
 
 
@@ -69,6 +76,20 @@ async def create_report(
         created_by=created_by,
     )
     session.add(report)
+    await session.commit()
+    await session.refresh(report)
+    return report
+
+
+async def update_report(
+    session: AsyncSession,
+    report: Report,
+    report_update: ReportUpdate,
+) -> Report:
+    update_data = report_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(report, field, value)
+
     await session.commit()
     await session.refresh(report)
     return report
@@ -148,6 +169,69 @@ async def create_report_section(
     await session.commit()
     await session.refresh(section)
     return section
+
+
+async def update_report_section(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    section: ReportSection,
+    section_update: ReportSectionUpdate,
+) -> ReportSection:
+    update_data = section_update.model_dump(exclude_unset=True)
+    if "source_result_ids" in update_data:
+        source_result_ids = update_data["source_result_ids"] or []
+        update_data["source_result_ids"] = await validate_report_section_source_results(
+            session,
+            workspace_id,
+            source_result_ids,
+        )
+
+    for field, value in update_data.items():
+        setattr(section, field, value)
+
+    await session.commit()
+    await session.refresh(section)
+    return section
+
+
+async def reorder_report_sections(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    reorder_request: ReportSectionReorderRequest,
+) -> list[ReportSection]:
+    section_ids = [item.section_id for item in reorder_request.sections]
+    if len(section_ids) != len(set(section_ids)):
+        raise ReportSectionOrderingError("Report section ordering cannot contain duplicates")
+
+    result = await session.execute(
+        select(ReportSection).where(
+            ReportSection.workspace_id == workspace_id,
+            ReportSection.report_id == report_id,
+            ReportSection.id.in_(section_ids),
+        )
+    )
+    sections = list(result.scalars().all())
+    sections_by_id = {section.id: section for section in sections}
+    missing_section_ids = [
+        section_id for section_id in section_ids if section_id not in sections_by_id
+    ]
+    if missing_section_ids:
+        raise ReportSectionOrderingError(
+            "Report section ordering contains sections outside this report"
+        )
+
+    for item in reorder_request.sections:
+        sections_by_id[item.section_id].sort_order = item.sort_order
+
+    await session.commit()
+    for section in sections:
+        await session.refresh(section)
+
+    return sorted(
+        sections,
+        key=lambda section: (section.sort_order, section.created_at, str(section.id)),
+    )
 
 
 def render_report_preview_markdown(

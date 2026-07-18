@@ -9,9 +9,14 @@ from backend.app.schemas.report import (
     ReportCreate,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
+    ReportSectionOrderItem,
+    ReportSectionReorderRequest,
+    ReportSectionUpdate,
+    ReportUpdate,
 )
 from backend.app.services.reports import (
     ReportSectionGenerationError,
+    ReportSectionOrderingError,
     ReportSectionSourceError,
     build_report_preview,
     create_report,
@@ -22,6 +27,9 @@ from backend.app.services.reports import (
     list_report_sections_for_report,
     list_reports_for_workspace,
     render_report_preview_markdown,
+    reorder_report_sections,
+    update_report,
+    update_report_section,
 )
 
 
@@ -193,6 +201,24 @@ async def test_create_report_persists_report() -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_report_persists_partial_updates() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    session = FakeSession()
+
+    updated_report = await update_report(
+        session,  # type: ignore[arg-type]
+        report,
+        ReportUpdate(title="Updated Policy Review Report"),
+    )
+
+    assert updated_report is report
+    assert report.title == "Updated Policy Review Report"
+    assert session.committed is True
+    assert session.refreshed is report
+
+
+@pytest.mark.asyncio
 async def test_list_report_sections_for_report_returns_sections() -> None:
     workspace_id = uuid.uuid4()
     report_id = uuid.uuid4()
@@ -358,6 +384,99 @@ async def test_create_report_section_rejects_unapproved_source_results() -> None
         )
 
     assert session.added is None
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_update_report_section_persists_content_updates() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    section = make_section(workspace_id, report_id)
+    session = FakeSession()
+
+    updated_section = await update_report_section(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        section,
+        ReportSectionUpdate(
+            title="Updated Summary",
+            body_markdown="Updated body",
+            sort_order=30,
+        ),
+    )
+
+    assert updated_section is section
+    assert section.title == "Updated Summary"
+    assert section.body_markdown == "Updated body"
+    assert section.sort_order == 30
+    assert session.committed is True
+    assert session.refreshed is section
+
+
+@pytest.mark.asyncio
+async def test_update_report_section_validates_source_results() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    section = make_section(workspace_id, report_id)
+    session = FakeSession([FakeResult(items=[])])
+
+    with pytest.raises(ReportSectionSourceError):
+        await update_report_section(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            section,
+            ReportSectionUpdate(source_result_ids=[str(uuid.uuid4())]),
+        )
+
+    assert session.committed is False
+
+
+@pytest.mark.asyncio
+async def test_reorder_report_sections_updates_sort_order() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    first_section = make_section(workspace_id, report_id)
+    second_section = make_section(workspace_id, report_id)
+    session = FakeSession([FakeResult(items=[first_section, second_section])])
+
+    sections = await reorder_report_sections(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report_id,
+        ReportSectionReorderRequest(
+            sections=[
+                ReportSectionOrderItem(section_id=first_section.id, sort_order=20),
+                ReportSectionOrderItem(section_id=second_section.id, sort_order=10),
+            ]
+        ),
+    )
+
+    assert first_section.sort_order == 20
+    assert second_section.sort_order == 10
+    assert [section.id for section in sections] == [second_section.id, first_section.id]
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_reorder_report_sections_rejects_duplicate_ids() -> None:
+    workspace_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    section_id = uuid.uuid4()
+    session = FakeSession()
+
+    with pytest.raises(ReportSectionOrderingError):
+        await reorder_report_sections(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report_id,
+            ReportSectionReorderRequest(
+                sections=[
+                    ReportSectionOrderItem(section_id=section_id, sort_order=10),
+                    ReportSectionOrderItem(section_id=section_id, sort_order=20),
+                ]
+            ),
+        )
+
     assert session.committed is False
 
 

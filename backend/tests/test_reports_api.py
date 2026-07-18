@@ -13,8 +13,18 @@ from backend.app.main import app
 from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
-from backend.app.schemas.report import ReportPreviewRead, ReportSectionGenerateRequest
-from backend.app.services.reports import ReportSectionGenerationError, ReportSectionSourceError
+from backend.app.schemas.report import (
+    ReportPreviewRead,
+    ReportSectionGenerateRequest,
+    ReportSectionReorderRequest,
+    ReportSectionUpdate,
+    ReportUpdate,
+)
+from backend.app.services.reports import (
+    ReportSectionGenerationError,
+    ReportSectionOrderingError,
+    ReportSectionSourceError,
+)
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES
 
 
@@ -173,6 +183,56 @@ def test_create_report_requires_workspace_write_role(monkeypatch: pytest.MonkeyP
     body = response.json()
     assert body["message"] == "report created"
     assert body["data"]["id"] == str(report.id)
+
+
+def test_update_report_requires_workspace_write_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_update_report(
+        session: AsyncSession,
+        report: Report,
+        report_update: ReportUpdate,
+    ) -> Report:
+        assert report_update.title == "Updated Report"
+        report.title = "Updated Report"
+        return report
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "update_report", fake_update_report)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}",
+            json={"title": "Updated Report"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "report updated"
+    assert body["data"]["title"] == "Updated Report"
 
 
 def test_read_report_returns_404_when_workspace_access_is_denied(
@@ -380,6 +440,189 @@ def test_create_report_section_returns_400_for_unreportable_sources(
     )
 
 
+def test_update_report_section_returns_updated_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    section = make_section(workspace.id, report.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_get_report_section_for_report(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        section_id: uuid.UUID,
+    ) -> ReportSection:
+        return section
+
+    async def fake_update_report_section(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        section: ReportSection,
+        section_update: ReportSectionUpdate,
+    ) -> ReportSection:
+        assert section_update.body_markdown == "Updated summary"
+        section.body_markdown = "Updated summary"
+        return section
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(
+        report_endpoints,
+        "get_report_section_for_report",
+        fake_get_report_section_for_report,
+    )
+    monkeypatch.setattr(report_endpoints, "update_report_section", fake_update_report_section)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections/{section.id}",
+            json={"body_markdown": "Updated summary"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "report section updated"
+    assert body["data"]["body_markdown"] == "Updated summary"
+
+
+def test_reorder_report_sections_returns_ordered_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    first_section = make_section(workspace.id, report.id)
+    second_section = make_section(workspace.id, report.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_reorder_report_sections(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        reorder_request: ReportSectionReorderRequest,
+    ) -> list[ReportSection]:
+        assert reorder_request.sections[0].section_id == second_section.id
+        second_section.sort_order = 10
+        first_section.sort_order = 20
+        return [second_section, first_section]
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "reorder_report_sections", fake_reorder_report_sections)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections/reorder",
+            json={
+                "sections": [
+                    {"section_id": str(second_section.id), "sort_order": 10},
+                    {"section_id": str(first_section.id), "sort_order": 20},
+                ]
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "report sections reordered"
+    assert [section["id"] for section in body["data"]] == [
+        str(second_section.id),
+        str(first_section.id),
+    ]
+
+
+def test_reorder_report_sections_returns_400_for_invalid_ordering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_reorder_report_sections(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+        reorder_request: ReportSectionReorderRequest,
+    ) -> list[ReportSection]:
+        raise ReportSectionOrderingError("Report section ordering cannot contain duplicates")
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "reorder_report_sections", fake_reorder_report_sections)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/sections/reorder",
+            json={
+                "sections": [
+                    {"section_id": str(uuid.uuid4()), "sort_order": 10},
+                ]
+            },
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Report section ordering cannot contain duplicates"
+
+
 def test_generate_report_section_returns_created_section(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -507,6 +750,9 @@ def test_report_routes_are_registered_in_openapi() -> None:
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/preview" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections" in paths
+    assert (
+        "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/reorder"
+    ) in paths
     assert (
         "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/generate"
     ) in paths

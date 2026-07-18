@@ -14,6 +14,10 @@ class ReportCreate(ReportBase):
     pass
 
 
+class ReportUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+
+
 class ReportRead(ReportBase):
     id: uuid.UUID
     workspace_id: uuid.UUID
@@ -47,11 +51,29 @@ class ReportSectionCreate(ReportSectionBase):
     pass
 
 
+class ReportSectionUpdate(BaseModel):
+    template_section_key: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    body_markdown: str | None = None
+    source_task_keys: list[str] | None = None
+    source_result_ids: list[str] | None = None
+    sort_order: int | None = None
+
+
 class ReportSectionGenerateRequest(BaseModel):
     analysis_result_ids: list[uuid.UUID] = Field(min_length=1)
     template_section_key: str | None = Field(default=None, max_length=100)
     title: str | None = Field(default=None, min_length=1, max_length=255)
     sort_order: int = 0
+
+
+class ReportSectionOrderItem(BaseModel):
+    section_id: uuid.UUID
+    sort_order: int
+
+
+class ReportSectionReorderRequest(BaseModel):
+    sections: list[ReportSectionOrderItem] = Field(min_length=1)
 
 
 class ReportSectionRead(ReportSectionBase):

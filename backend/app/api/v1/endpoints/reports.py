@@ -16,10 +16,14 @@ from backend.app.schemas.report import (
     ReportSectionCreate,
     ReportSectionGenerateRequest,
     ReportSectionRead,
+    ReportSectionReorderRequest,
+    ReportSectionUpdate,
+    ReportUpdate,
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.reports import (
     ReportSectionGenerationError,
+    ReportSectionOrderingError,
     ReportSectionSourceError,
     build_report_preview,
     create_report,
@@ -29,6 +33,9 @@ from backend.app.services.reports import (
     get_report_section_for_report,
     list_report_sections_for_report,
     list_reports_for_workspace,
+    reorder_report_sections,
+    update_report,
+    update_report_section,
 )
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES, get_workspace_for_user
 
@@ -68,6 +75,23 @@ async def read_report_endpoint(
     await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
     report = await get_report_or_404(session, workspace_id, report_id)
     return success_response(ReportRead.model_validate(report))
+
+
+@router.patch("/{report_id}", response_model=APIResponse[ReportRead])
+async def update_report_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    report_update: ReportUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    report = await get_report_or_404(session, workspace_id, report_id)
+    updated_report = await update_report(session, report, report_update)
+    return success_response(
+        ReportRead.model_validate(updated_report),
+        message="report updated",
+    )
 
 
 @router.get("/{report_id}/preview", response_model=APIResponse[ReportPreviewRead])
@@ -155,6 +179,67 @@ async def generate_report_section_endpoint(
     return success_response(
         ReportSectionRead.model_validate(section),
         message="report section generated",
+    )
+
+
+@router.patch(
+    "/{report_id}/sections/reorder",
+    response_model=APIResponse[list[ReportSectionRead]],
+)
+async def reorder_report_sections_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    reorder_request: ReportSectionReorderRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[list[ReportSectionRead]]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    await get_report_or_404(session, workspace_id, report_id)
+    try:
+        sections = await reorder_report_sections(
+            session,
+            workspace_id,
+            report_id,
+            reorder_request,
+        )
+    except ReportSectionOrderingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return success_response(
+        [ReportSectionRead.model_validate(section) for section in sections],
+        message="report sections reordered",
+    )
+
+
+@router.patch("/{report_id}/sections/{section_id}", response_model=APIResponse[ReportSectionRead])
+async def update_report_section_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    section_id: uuid.UUID,
+    section_update: ReportSectionUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportSectionRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    await get_report_or_404(session, workspace_id, report_id)
+    section = await get_report_section_or_404(session, workspace_id, report_id, section_id)
+    try:
+        updated_section = await update_report_section(
+            session,
+            workspace_id,
+            section,
+            section_update,
+        )
+    except ReportSectionSourceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return success_response(
+        ReportSectionRead.model_validate(updated_section),
+        message="report section updated",
     )
 
 
