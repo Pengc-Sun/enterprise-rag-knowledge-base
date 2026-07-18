@@ -669,6 +669,84 @@ POST /api/v1/knowledge-bases/{knowledge_base_id}/conversations/{conversation_id}
 
 Uses Server-Sent Events. The stream can emit token, metadata, source, completion, and error events.
 
+## Analysis and Review Endpoints
+
+Analysis task endpoints are workspace-scoped and require authentication. They turn retrieved
+workspace evidence into structured AI output, then route that output through human review before it
+can be used by report workflows.
+
+### List analysis tasks
+
+```text
+GET /api/v1/workspaces/{workspace_id}/analysis-tasks
+```
+
+Requires workspace read access.
+
+### Create analysis task
+
+```text
+POST /api/v1/workspaces/{workspace_id}/analysis-tasks
+```
+
+Requires workspace owner or admin.
+
+### Run analysis task
+
+```text
+POST /api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/run
+```
+
+Requires workspace owner or admin. Successful runs persist an `AnalysisResult` with status
+`needs_review` and normalized citations.
+
+### Review queue
+
+```text
+GET /api/v1/workspaces/{workspace_id}/analysis-tasks/review-queue
+```
+
+Requires workspace owner, admin, or reviewer. Optional filters:
+
+- `status`: one of `ai_generated`, `needs_review`, `approved`, `edited`, or `rejected`
+- `analysis_task_id`: restrict queue items to one task
+- `task_type`: restrict queue items by task type
+- `limit` and `offset`: bounded pagination
+
+Without a `status` filter, the queue returns `ai_generated` and `needs_review` results.
+
+### Create review decision
+
+```text
+POST /api/v1/workspaces/{workspace_id}/analysis-tasks/{analysis_task_id}/results/{analysis_result_id}/review-decisions
+```
+
+Requires workspace owner, admin, or reviewer.
+
+Request body:
+
+```json
+{
+  "decision": "edit",
+  "comment": "Clarified the requirement wording.",
+  "edited_result": {
+    "summary": "Updated reviewer-approved summary",
+    "findings": []
+  }
+}
+```
+
+Supported decisions:
+
+- `approve`: marks the analysis result `approved`
+- `edit`: requires `edited_result`, replaces the active structured result, and marks it `edited`
+- `reject`: marks the analysis result `rejected`
+- `request_changes`: marks the analysis result `needs_review`
+
+Each decision persists a `ReviewDecision` row with the original AI output snapshot and any reviewer
+edit. Successful review decisions also create an `AuditLog` record with action
+`review_decision.created`.
+
 ## Permission Summary
 
 | Operation | Required permission |
@@ -680,7 +758,9 @@ Uses Server-Sent Events. The stream can emit token, metadata, source, completion
 | Upload/reprocess/delete documents | workspace owner or admin |
 | RAG query and debug | workspace owner, admin, editor, reviewer, viewer |
 | Conversations and chat | workspace owner, admin, editor, reviewer, viewer |
+| List review queue | workspace owner, admin, reviewer |
+| Create review decision | workspace owner, admin, reviewer |
 
 ## API Testing
 
-Backend API behavior is covered by tests under `backend/tests/`, including auth, knowledge bases, documents, RAG queries, conversations, streaming, unified errors, and end-to-end flows.
+Backend API behavior is covered by tests under `backend/tests/`, including auth, knowledge bases, documents, RAG queries, conversations, streaming, analysis tasks, review decisions, unified errors, and end-to-end flows.

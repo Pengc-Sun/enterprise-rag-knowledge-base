@@ -24,6 +24,7 @@ class AuditAction(StrEnum):
     DOCUMENT_UPLOADED = "document.uploaded"
     DOCUMENT_REPROCESSED = "document.reprocessed"
     DOCUMENT_DELETED = "document.deleted"
+    REVIEW_DECISION_CREATED = "review_decision.created"
 
 
 class AuditResourceType(StrEnum):
@@ -31,6 +32,7 @@ class AuditResourceType(StrEnum):
     WORKSPACE_MEMBER = "workspace_member"
     WORKSPACE_DIRECTORY = "workspace_directory"
     DOCUMENT = "document"
+    REVIEW_DECISION = "review_decision"
 
 
 class AuditLog(Base):

@@ -13,6 +13,8 @@ def test_audit_action_values() -> None:
     assert AuditAction.DOCUMENT_UPLOADED.value == "document.uploaded"
     assert AuditAction.DOCUMENT_REPROCESSED.value == "document.reprocessed"
     assert AuditAction.DOCUMENT_DELETED.value == "document.deleted"
+    assert AuditAction.REVIEW_DECISION_CREATED.value == "review_decision.created"
+    assert AuditResourceType.REVIEW_DECISION.value == "review_decision"
 
 
 def test_audit_log_stores_actor_resource_and_metadata() -> None:

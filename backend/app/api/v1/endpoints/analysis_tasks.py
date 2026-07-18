@@ -14,6 +14,7 @@ from backend.app.models.analysis import (
     AnalysisTask,
     ReviewDecision,
 )
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.analysis import (
@@ -40,6 +41,7 @@ from backend.app.services.analysis_tasks import (
     list_review_queue_results,
     list_workspace_analysis_tasks,
 )
+from backend.app.services.audit_logs import create_audit_log
 from backend.app.services.llms import LLMProviderError, create_llm_provider
 from backend.app.services.workspaces import (
     READ_ROLES,
@@ -290,6 +292,19 @@ async def create_review_decision_endpoint(
         )
     except ReviewDecisionValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await create_audit_log(
+        session,
+        workspace_id=workspace_id,
+        actor_user_id=current_user.id,
+        action=AuditAction.REVIEW_DECISION_CREATED,
+        resource_type=AuditResourceType.REVIEW_DECISION,
+        resource_id=review_decision.id,
+        metadata={
+            "analysis_task_id": str(analysis_task_id),
+            "analysis_result_id": str(analysis_result.id),
+            "decision": review_decision.decision,
+        },
+    )
     return success_response(
         ReviewDecisionRead.model_validate(review_decision),
         message="review decision created",

@@ -45,7 +45,7 @@ Workspace membership is the v2.0 top-level authorization boundary:
 | `owner` | Full workspace control, including delete. |
 | `admin` | Workspace write and member-management operations. |
 | `editor` | Workspace read and future content-editing workflows. |
-| `reviewer` | Workspace read and future review workflows. |
+| `reviewer` | Workspace read access plus review queue and review decision workflows. |
 | `viewer` | Workspace read-only operations. |
 
 Knowledge base permissions remain available for v1.0 compatibility:
@@ -63,7 +63,9 @@ Endpoint behavior:
 - Workspace-scoped knowledge base delete requires workspace owner.
 - Document listing requires workspace read access.
 - Document upload, reprocess, and delete require workspace owner or admin.
-- Workspace creation, workspace updates, member changes, and document write actions create database audit log records.
+- Review queue listing and review decision creation require workspace owner, admin, or reviewer.
+- Workspace creation, workspace updates, member changes, directory changes, document write actions,
+  and successful review decisions create database audit log records.
 - RAG query, retrieval debug, conversations, and chat require workspace read access.
 
 For scoped resources, unauthorized access generally returns `404 Knowledge base not found` or resource-specific `404`, which avoids confirming whether private resources exist.

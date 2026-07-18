@@ -407,6 +407,8 @@ v2.0 upgrade progress:
 - Week 2: v1.0 knowledge-base data migration into workspaces, required workspace IDs on existing data tables, seeded migration validation, Alembic downgrade/upgrade validation, and Docker migrate startup validation.
 - Week 3: workspace isolation across knowledge bases, documents, retrieval, RAG, conversations, messages, cross-workspace negative tests, and workspace/document audit logging.
 - Week 4: template-driven workspace structure, workspace directory APIs, default knowledge-base creation, initial analysis tasks, draft report outlines, and template instantiation test coverage.
+- Week 5: analysis task/result APIs, workspace-scoped task execution, structured JSON output validation, normalized citations, deterministic provider behavior, and provider failure tests.
+- Week 6: reviewer workflow, review decisions, approve/edit/reject/request-changes state transitions, original AI output preservation, review queue APIs, reviewer permissions, and review audit logging.
 
 ## Development Logs
 
@@ -417,6 +419,8 @@ v2.0 upgrade progress:
 - `docs/development-log/v2-week-2.md`
 - `docs/development-log/v2-week-3.md`
 - `docs/development-log/v2-week-4.md`
+- `docs/development-log/v2-week-5.md`
+- `docs/development-log/v2-week-6.md`
 
 Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
@@ -558,6 +562,30 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Different built-in templates create different analysis task definitions.
 - Backend tests cover template definitions, directory APIs, template-created directories, default knowledge bases, analysis tasks, report outlines, and nested directory parent links.
 - Week 4 close-out verification passed with pytest, Ruff, mypy, Alembic current, Alembic migration round trips through `0021`, and `git diff --check`.
+
+## v2.0 Week 5 Acceptance Status
+
+- `analysis_tasks` and `analysis_results` persistence is implemented with workspace-scoped APIs.
+- Analysis task execution retrieves only workspace-scoped chunks.
+- Structured AI output is requested as strict JSON and parsed before persistence.
+- Analysis output is validated against task schemas.
+- Uncited findings and malformed provider responses are rejected.
+- Normalized citations are persisted with each analysis result.
+- Deterministic structured provider behavior keeps tests reproducible.
+- Provider errors mark tasks failed without persisting invalid results.
+- Week 5 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
+
+## v2.0 Week 6 Acceptance Status
+
+- `review_decisions` persistence records reviewer, decision, comment, original result, and optional edited result.
+- Reviewers can approve, edit, reject, or request changes for AI analysis results.
+- Review actions update analysis result status to `approved`, `edited`, `rejected`, or `needs_review`.
+- Reviewer edits preserve the first original AI output across later edits.
+- Review decision creation requires workspace owner, admin, or reviewer.
+- Review queue API lists and filters `ai_generated` and `needs_review` analysis results.
+- Review decision creation writes `review_decision.created` audit log records.
+- Review workflow, permissions, queue behavior, and audit logging are documented.
+- Week 6 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
 
 ## CI
 

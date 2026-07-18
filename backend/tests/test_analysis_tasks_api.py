@@ -17,6 +17,7 @@ from backend.app.models.analysis import (
     ReviewDecision,
     ReviewDecisionType,
 )
+from backend.app.models.audit import AuditAction, AuditResourceType
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
 from backend.app.services.analysis_tasks import (
@@ -122,6 +123,34 @@ def set_overrides(user: User) -> None:
 
 def clear_overrides() -> None:
     app.dependency_overrides.clear()
+
+
+def patch_audit_log(
+    monkeypatch: pytest.MonkeyPatch,
+    records: list[dict[str, object]],
+) -> None:
+    async def fake_create_audit_log(
+        session: AsyncSession,
+        *,
+        workspace_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        action: AuditAction,
+        resource_type: AuditResourceType,
+        resource_id: uuid.UUID | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        records.append(
+            {
+                "workspace_id": workspace_id,
+                "actor_user_id": actor_user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "metadata": metadata or {},
+            }
+        )
+
+    monkeypatch.setattr(analysis_task_endpoints, "create_audit_log", fake_create_audit_log)
 
 
 def test_list_analysis_tasks_requires_workspace_membership(
@@ -531,6 +560,7 @@ def test_create_review_decision_returns_created_decision(
     task = make_task(workspace.id, user.id)
     result = make_result(workspace.id, task.id)
     decision = make_review_decision(workspace.id, result.id, user.id)
+    audit_logs: list[dict[str, object]] = []
 
     async def fake_get_workspace_for_user(
         session: AsyncSession,
@@ -588,6 +618,7 @@ def test_create_review_decision_returns_created_decision(
         "create_review_decision_for_result",
         fake_create_review_decision_for_result,
     )
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -606,6 +637,20 @@ def test_create_review_decision_returns_created_decision(
     assert body["data"]["analysis_result_id"] == str(result.id)
     assert body["data"]["decision"] == "approve"
     assert body["data"]["reviewer_id"] == str(user.id)
+    assert audit_logs == [
+        {
+            "workspace_id": workspace.id,
+            "actor_user_id": user.id,
+            "action": AuditAction.REVIEW_DECISION_CREATED,
+            "resource_type": AuditResourceType.REVIEW_DECISION,
+            "resource_id": decision.id,
+            "metadata": {
+                "analysis_task_id": str(task.id),
+                "analysis_result_id": str(result.id),
+                "decision": "approve",
+            },
+        }
+    ]
 
 
 def test_list_review_queue_returns_filtered_items(
@@ -737,6 +782,7 @@ def test_create_review_decision_requires_reviewer_role(
     workspace_id = uuid.uuid4()
     task_id = uuid.uuid4()
     result_id = uuid.uuid4()
+    audit_logs: list[dict[str, object]] = []
 
     async def fake_get_workspace_for_user(
         session: AsyncSession,
@@ -791,6 +837,7 @@ def test_create_review_decision_requires_reviewer_role(
         "create_review_decision_for_result",
         fake_create_review_decision_for_result,
     )
+    patch_audit_log(monkeypatch, audit_logs)
     set_overrides(user)
 
     try:
@@ -805,6 +852,7 @@ def test_create_review_decision_requires_reviewer_role(
 
     assert response.status_code == 404
     assert response.json()["message"] == "Workspace not found"
+    assert audit_logs == []
 
 
 def test_create_review_decision_returns_400_for_invalid_action_payload(

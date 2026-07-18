@@ -87,7 +87,10 @@ Main entities:
 - `DocumentChunk`: parsed content chunk with page, section, token count, JSON metadata, full-text vector, and pgvector embedding.
 - `Conversation`: user conversation scoped to a knowledge base.
 - `Message`: persisted user, assistant, or system message with source citations and optional token usage.
-- `AuditLog`: workspace-scoped event record for key workspace, member, and document actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
+- `AnalysisTask`: workspace-scoped structured AI task created manually or from a workspace template.
+- `AnalysisResult`: structured AI output, normalized citations, confidence, provider metadata, and review status.
+- `ReviewDecision`: reviewer approve, edit, reject, or request-changes action with original and edited result snapshots.
+- `AuditLog`: workspace-scoped event record for key workspace, member, document, directory, and review actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:
 
@@ -121,6 +124,7 @@ Authorization is enforced in service or endpoint logic through knowledge base an
 - Deleting a knowledge base requires `owner`.
 - Workspace read operations allow `owner`, `admin`, `editor`, `reviewer`, or `viewer`.
 - Workspace write and member-management operations allow `owner` or `admin`.
+- Review queue and review decision creation allow `owner`, `admin`, or `reviewer`.
 - Deleting a workspace requires `owner`.
 - Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 
@@ -138,7 +142,26 @@ Workspace isolation is enforced across the v2.0 backend surface:
 - RAG query and retrieval debug endpoints validate workspace membership before provider calls.
 - Cross-workspace access returns `404` before document reads, retrieval, chat, stream, or LLM
   execution.
-- Write actions for workspaces, workspace members, and documents create `AuditLog` records.
+- Write actions for workspaces, workspace members, workspace directories, documents, and review
+  decisions create `AuditLog` records.
+
+## Review Workflow
+
+Workspace templates can create initial analysis tasks. Running a task retrieves workspace-scoped
+evidence, asks the configured analysis provider for structured JSON, validates that output against
+the task schema, normalizes citations, and stores an `AnalysisResult` with `needs_review` status.
+
+Reviewers use the review queue to find `ai_generated` and `needs_review` results. A reviewer can:
+
+- approve the result, which sets the result status to `approved`
+- edit the structured result, which stores the edited payload and sets the status to `edited`
+- reject the result, which sets the status to `rejected`
+- request changes, which returns the result to `needs_review`
+
+Every review decision stores the original AI result snapshot. Later reviewer edits keep referencing
+that first original snapshot, so formal reports can distinguish AI output from human-approved
+changes. Successful review decisions also write an audit log with action
+`review_decision.created`.
 
 ## Document Ingestion Flow
 
