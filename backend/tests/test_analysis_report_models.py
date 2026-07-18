@@ -8,7 +8,15 @@ from backend.app.models.analysis import (
     ReviewDecision,
     ReviewDecisionType,
 )
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 
 
 def test_analysis_task_status_values() -> None:
@@ -36,6 +44,13 @@ def test_report_status_values() -> None:
     assert ReportStatus.EXPORTED.value == "exported"
     assert ReportSectionStatus.DRAFT.value == "draft"
     assert ReportSectionStatus.APPROVED.value == "approved"
+    assert ExportFormat.MARKDOWN.value == "markdown"
+    assert ExportFormat.DOCX.value == "docx"
+    assert ExportFormat.PDF.value == "pdf"
+    assert ExportJobStatus.PENDING.value == "pending"
+    assert ExportJobStatus.RUNNING.value == "running"
+    assert ExportJobStatus.COMPLETED.value == "completed"
+    assert ExportJobStatus.FAILED.value == "failed"
 
 
 def test_analysis_task_accepts_template_metadata() -> None:
@@ -148,3 +163,28 @@ def test_report_section_relationship() -> None:
     assert section in report.sections
     assert section.source_task_keys == ["policy_requirements"]
     assert section.source_result_ids == []
+
+
+def test_export_job_relationship() -> None:
+    workspace_id = uuid.uuid4()
+    report = Report(
+        workspace_id=workspace_id,
+        title="Policy Review Report",
+        status=ReportStatus.EXPORTED.value,
+        created_by=uuid.uuid4(),
+    )
+    export_job = ExportJob(
+        workspace_id=workspace_id,
+        report=report,
+        format=ExportFormat.MARKDOWN.value,
+        status=ExportJobStatus.COMPLETED.value,
+        file_path=None,
+        error_message=None,
+        created_by=uuid.uuid4(),
+        export_metadata={"markdown": "# Policy Review Report\n"},
+    )
+
+    assert export_job.report is report
+    assert export_job.format == "markdown"
+    assert export_job.status == "completed"
+    assert export_job.export_metadata["markdown"] == "# Policy Review Report\n"

@@ -4,9 +4,19 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportExportCreate,
+    ReportExportRead,
     ReportPreviewRead,
     ReportRead,
     ReportSectionCreate,
@@ -71,6 +81,36 @@ def test_report_preview_read_accepts_markdown_payload() -> None:
     assert payload.workspace_id == workspace_id
     assert payload.status == ReportStatus.DRAFT
     assert payload.markdown == "# Policy Review Report\n"
+
+
+def test_report_export_create_defaults_to_markdown() -> None:
+    payload = ReportExportCreate()
+
+    assert payload.format == ExportFormat.MARKDOWN
+
+
+def test_report_export_read_serializes_model() -> None:
+    now = datetime.now(UTC)
+    export_job = ExportJob(
+        id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        report_id=uuid.uuid4(),
+        format=ExportFormat.MARKDOWN.value,
+        status=ExportJobStatus.COMPLETED.value,
+        file_path=None,
+        error_message=None,
+        created_by=uuid.uuid4(),
+        export_metadata={"markdown": "# Policy Review Report\n"},
+        created_at=now,
+        updated_at=now,
+    )
+
+    payload = ReportExportRead.model_validate(export_job)
+
+    assert payload.id == export_job.id
+    assert payload.format == ExportFormat.MARKDOWN
+    assert payload.status == ExportJobStatus.COMPLETED
+    assert payload.export_metadata["markdown"] == "# Policy Review Report\n"
 
 
 def test_report_section_create_accepts_content_fields() -> None:

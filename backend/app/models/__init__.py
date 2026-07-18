@@ -20,7 +20,15 @@ from backend.app.models.knowledge_base import (
     KnowledgeBasePermission,
     KnowledgeBaseVisibility,
 )
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import (
     Workspace,
@@ -53,6 +61,9 @@ __all__ = [
     "KnowledgeBaseMember",
     "KnowledgeBasePermission",
     "KnowledgeBaseVisibility",
+    "ExportFormat",
+    "ExportJob",
+    "ExportJobStatus",
     "Report",
     "ReportSection",
     "ReportSectionStatus",

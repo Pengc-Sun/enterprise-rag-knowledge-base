@@ -823,6 +823,53 @@ Response data:
 }
 ```
 
+### Create report export
+
+```text
+POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/exports
+```
+
+Requires workspace owner or admin. Day 50 supports `markdown` export jobs. The export job is marked
+`completed` immediately and stores the rendered Markdown in export metadata. DOCX, PDF, file storage,
+and download URLs are added by later export workflow days.
+
+Request body:
+
+```json
+{
+  "format": "markdown"
+}
+```
+
+Response data:
+
+```json
+{
+  "id": "8df873e9-7f97-4ea5-b60c-5a8e29c92025",
+  "workspace_id": "f196aa9b-32b9-4d37-9343-f7efe7182b42",
+  "report_id": "80d2854c-96c9-466c-9360-71116f1c49c0",
+  "format": "markdown",
+  "status": "completed",
+  "file_path": null,
+  "error_message": null,
+  "created_by": "aa0894e2-9624-44dd-915e-d23548956335",
+  "export_metadata": {
+    "title": "Policy Review Report",
+    "section_count": 2,
+    "markdown": "# Policy Review Report\n\n## Policy Requirements\n\n..."
+  }
+}
+```
+
+### Read export job
+
+```text
+GET /api/v1/workspaces/{workspace_id}/exports/{export_id}
+```
+
+Requires workspace read access. Returns export format, status, file path when available, error
+message, creator, and metadata.
+
 ### List report sections
 
 ```text

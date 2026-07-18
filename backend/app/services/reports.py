@@ -6,9 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.analysis import AnalysisResult, AnalysisResultStatus, AnalysisTask
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportExportCreate,
     ReportPreviewRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
@@ -34,6 +43,10 @@ class ReportSectionGenerationError(ReportSectionSourceError):
 
 
 class ReportSectionOrderingError(ValueError):
+    pass
+
+
+class ReportExportError(ValueError):
     pass
 
 
@@ -141,6 +154,53 @@ async def build_report_preview(
         section_count=len(sections),
         markdown=render_report_preview_markdown(report, sections),
     )
+
+
+async def get_export_job_for_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    export_id: uuid.UUID,
+) -> ExportJob | None:
+    result = await session.execute(
+        select(ExportJob).where(
+            ExportJob.id == export_id,
+            ExportJob.workspace_id == workspace_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_report_export(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    report: Report,
+    created_by: uuid.UUID,
+    export_create: ReportExportCreate,
+) -> ExportJob:
+    if export_create.format != ExportFormat.MARKDOWN:
+        raise ReportExportError("Only markdown export is supported")
+
+    preview = await build_report_preview(session, workspace_id, report)
+    export_job = ExportJob(
+        workspace_id=workspace_id,
+        report_id=report.id,
+        format=ExportFormat.MARKDOWN.value,
+        status=ExportJobStatus.COMPLETED.value,
+        file_path=None,
+        error_message=None,
+        created_by=created_by,
+        export_metadata={
+            "markdown": preview.markdown,
+            "title": preview.title,
+            "section_count": preview.section_count,
+        },
+    )
+    report.status = ReportStatus.EXPORTED.value
+    session.add(export_job)
+    await session.commit()
+    await session.refresh(export_job)
+    await session.refresh(report)
+    return export_job
 
 
 async def create_report_section(

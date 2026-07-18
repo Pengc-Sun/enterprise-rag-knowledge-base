@@ -274,3 +274,31 @@ def test_day36_review_decisions_migration_creates_review_audit_table() -> None:
     assert "fk_review_decisions_reviewer_id_users" in source
     assert "ix_review_decisions_workspace_id" in source
     assert "ix_review_decisions_analysis_result_id" in source
+
+
+def test_day50_export_jobs_migration_creates_export_tracking_table() -> None:
+    migration = load_migration(
+        "migration_0024",
+        "20260718_0024_create_export_jobs_table.py",
+    )
+
+    assert migration.revision == "0024"
+    assert migration.down_revision == "0023"
+
+    assert migration.__file__ is not None
+    source = Path(migration.__file__).read_text()
+    assert '"export_jobs"' in source
+    assert '"workspace_id"' in source
+    assert '"report_id"' in source
+    assert '"format"' in source
+    assert '"status"' in source
+    assert '"file_path"' in source
+    assert '"error_message"' in source
+    assert '"created_by"' in source
+    assert '"metadata"' in source
+    assert "fk_export_jobs_workspace_id_workspaces" in source
+    assert "fk_export_jobs_report_id_reports" in source
+    assert "fk_export_jobs_created_by_users" in source
+    assert "ix_export_jobs_workspace_id" in source
+    assert "ix_export_jobs_report_id" in source
+    assert "ix_export_jobs_status" in source

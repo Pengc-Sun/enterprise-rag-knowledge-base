@@ -4,9 +4,18 @@ from datetime import UTC, datetime
 import pytest
 
 from backend.app.models.analysis import AnalysisResult, AnalysisResultStatus, AnalysisTask
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportExportCreate,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
     ReportSectionOrderItem,
@@ -15,13 +24,16 @@ from backend.app.schemas.report import (
     ReportUpdate,
 )
 from backend.app.services.reports import (
+    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
     build_report_preview,
     create_report,
+    create_report_export,
     create_report_section,
     generate_report_section_from_results,
+    get_export_job_for_workspace,
     get_report_for_workspace,
     get_report_section_for_report,
     list_report_sections_for_report,
@@ -70,7 +82,7 @@ class FakeSession:
 
     def add(self, instance: object) -> None:
         self.added = instance
-        if isinstance(instance, (Report, ReportSection)) and instance.id is None:
+        if isinstance(instance, (Report, ReportSection, ExportJob)) and instance.id is None:
             instance.id = uuid.uuid4()
 
     async def commit(self) -> None:
@@ -283,6 +295,85 @@ async def test_build_report_preview_returns_ordered_markdown() -> None:
         "## Findings\n\n"
         "Approved findings.\n"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_export_job_for_workspace_returns_export_job() -> None:
+    workspace_id = uuid.uuid4()
+    export_job = ExportJob(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        report_id=uuid.uuid4(),
+        format=ExportFormat.MARKDOWN.value,
+        status=ExportJobStatus.COMPLETED.value,
+        file_path=None,
+        error_message=None,
+        created_by=uuid.uuid4(),
+        export_metadata={"markdown": "# Report\n"},
+    )
+    session = FakeSession([FakeResult(scalar=export_job)])
+
+    fetched = await get_export_job_for_workspace(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        export_job.id,
+    )
+
+    assert fetched is export_job
+    assert session.statements
+
+
+@pytest.mark.asyncio
+async def test_create_report_export_persists_completed_markdown_job() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    created_by = uuid.uuid4()
+    section = make_section(workspace_id, report.id)
+    section.title = "Executive Summary"
+    section.body_markdown = "Approved summary."
+    session = FakeSession([FakeResult(items=[section])])
+
+    export_job = await create_report_export(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report,
+        created_by,
+        ReportExportCreate(format=ExportFormat.MARKDOWN),
+    )
+
+    assert export_job.workspace_id == workspace_id
+    assert export_job.report_id == report.id
+    assert export_job.format == ExportFormat.MARKDOWN.value
+    assert export_job.status == ExportJobStatus.COMPLETED.value
+    assert export_job.created_by == created_by
+    assert export_job.file_path is None
+    assert export_job.error_message is None
+    assert export_job.export_metadata["section_count"] == 1
+    assert export_job.export_metadata["markdown"] == (
+        "# Policy Review Report\n\n## Executive Summary\n\nApproved summary.\n"
+    )
+    assert report.status == ReportStatus.EXPORTED.value
+    assert session.added is export_job
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_report_export_rejects_non_markdown_format() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    session = FakeSession()
+
+    with pytest.raises(ReportExportError):
+        await create_report_export(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report,
+            uuid.uuid4(),
+            ReportExportCreate(format=ExportFormat.PDF),
+        )
+
+    assert session.added is None
+    assert session.committed is False
 
 
 def test_render_report_preview_markdown_handles_empty_sections() -> None:

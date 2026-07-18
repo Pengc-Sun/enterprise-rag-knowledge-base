@@ -3,7 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.models.report import ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJobStatus,
+    ReportSectionStatus,
+    ReportStatus,
+)
 
 
 class ReportBase(BaseModel):
@@ -36,6 +41,26 @@ class ReportPreviewRead(BaseModel):
     status: ReportStatus
     section_count: int
     markdown: str
+
+
+class ReportExportCreate(BaseModel):
+    format: ExportFormat = ExportFormat.MARKDOWN
+
+
+class ReportExportRead(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    report_id: uuid.UUID
+    format: ExportFormat
+    status: ExportJobStatus
+    file_path: str | None
+    error_message: str | None
+    created_by: uuid.UUID | None
+    export_metadata: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReportSectionBase(BaseModel):

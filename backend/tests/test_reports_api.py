@@ -10,10 +10,19 @@ from backend.app.api.dependencies.auth import get_current_active_user
 from backend.app.api.v1.endpoints import reports as report_endpoints
 from backend.app.db.session import get_db_session
 from backend.app.main import app
-from backend.app.models.report import Report, ReportSection, ReportSectionStatus, ReportStatus
+from backend.app.models.report import (
+    ExportFormat,
+    ExportJob,
+    ExportJobStatus,
+    Report,
+    ReportSection,
+    ReportSectionStatus,
+    ReportStatus,
+)
 from backend.app.models.user import User, UserRole
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.report import (
+    ReportExportCreate,
     ReportPreviewRead,
     ReportSectionGenerateRequest,
     ReportSectionReorderRequest,
@@ -21,6 +30,7 @@ from backend.app.schemas.report import (
     ReportUpdate,
 )
 from backend.app.services.reports import (
+    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
@@ -80,6 +90,27 @@ def make_section(workspace_id: uuid.UUID, report_id: uuid.UUID) -> ReportSection
         source_result_ids=[],
         sort_order=10,
         status=ReportSectionStatus.DRAFT.value,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def make_export_job(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    created_by: uuid.UUID,
+) -> ExportJob:
+    now = datetime.now(UTC)
+    return ExportJob(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        report_id=report_id,
+        format=ExportFormat.MARKDOWN.value,
+        status=ExportJobStatus.COMPLETED.value,
+        file_path=None,
+        error_message=None,
+        created_by=created_by,
+        export_metadata={"markdown": "# Policy Review Report\n", "section_count": 1},
         created_at=now,
         updated_at=now,
     )
@@ -385,6 +416,161 @@ def test_preview_report_returns_markdown(monkeypatch: pytest.MonkeyPatch) -> Non
     assert body["data"]["report_id"] == str(report.id)
     assert body["data"]["section_count"] == 1
     assert body["data"]["markdown"].startswith("# Policy Review Report")
+
+
+def test_create_report_export_returns_completed_markdown_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    export_job = make_export_job(workspace.id, report.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_create_report_export(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report: Report,
+        created_by: uuid.UUID,
+        export_create: ReportExportCreate,
+    ) -> ExportJob:
+        assert workspace_id == workspace.id
+        assert report.id == report.id
+        assert created_by == user.id
+        assert export_create.format == ExportFormat.MARKDOWN
+        return export_job
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "create_report_export", fake_create_report_export)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/exports",
+            json={"format": "markdown"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["message"] == "report export created"
+    assert body["data"]["id"] == str(export_job.id)
+    assert body["data"]["format"] == "markdown"
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["export_metadata"]["markdown"] == "# Policy Review Report\n"
+
+
+def test_create_report_export_returns_400_for_unsupported_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_create_report_export(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report: Report,
+        created_by: uuid.UUID,
+        export_create: ReportExportCreate,
+    ) -> ExportJob:
+        raise ReportExportError("Only markdown export is supported")
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "create_report_export", fake_create_report_export)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/exports",
+            json={"format": "pdf"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Only markdown export is supported"
+
+
+def test_read_export_job_returns_workspace_export_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    export_job = make_export_job(workspace.id, report.id, user.id)
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == READ_ROLES
+        return workspace
+
+    async def fake_get_export_job_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        export_id: uuid.UUID,
+    ) -> ExportJob:
+        assert workspace_id == workspace.id
+        assert export_id == export_job.id
+        return export_job
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        report_endpoints,
+        "get_export_job_for_workspace",
+        fake_get_export_job_for_workspace,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/workspaces/{workspace.id}/exports/{export_job.id}")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["id"] == str(export_job.id)
+    assert body["data"]["status"] == "completed"
 
 
 def test_create_report_section_returns_400_for_unreportable_sources(
@@ -749,6 +935,8 @@ def test_report_routes_are_registered_in_openapi() -> None:
     assert "/api/v1/workspaces/{workspace_id}/reports" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/preview" in paths
+    assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/exports" in paths
+    assert "/api/v1/workspaces/{workspace_id}/exports/{export_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections" in paths
     assert (
         "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/reorder"

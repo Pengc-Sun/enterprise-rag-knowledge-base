@@ -11,6 +11,8 @@ from backend.app.models.user import User
 from backend.app.models.workspace import Workspace
 from backend.app.schemas.report import (
     ReportCreate,
+    ReportExportCreate,
+    ReportExportRead,
     ReportPreviewRead,
     ReportRead,
     ReportSectionCreate,
@@ -22,13 +24,16 @@ from backend.app.schemas.report import (
 )
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.services.reports import (
+    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
     build_report_preview,
     create_report,
+    create_report_export,
     create_report_section,
     generate_report_section_from_results,
+    get_export_job_for_workspace,
     get_report_for_workspace,
     get_report_section_for_report,
     list_report_sections_for_report,
@@ -40,6 +45,7 @@ from backend.app.services.reports import (
 from backend.app.services.workspaces import READ_ROLES, WRITE_ROLES, get_workspace_for_user
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/reports", tags=["reports"])
+exports_router = APIRouter(prefix="/workspaces/{workspace_id}/exports", tags=["exports"])
 
 
 @router.get("", response_model=APIResponse[list[ReportRead]])
@@ -105,6 +111,40 @@ async def preview_report_endpoint(
     report = await get_report_or_404(session, workspace_id, report_id)
     preview = await build_report_preview(session, workspace_id, report)
     return success_response(preview)
+
+
+@router.post(
+    "/{report_id}/exports",
+    response_model=APIResponse[ReportExportRead],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_report_export_endpoint(
+    workspace_id: uuid.UUID,
+    report_id: uuid.UUID,
+    export_create: ReportExportCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportExportRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
+    report = await get_report_or_404(session, workspace_id, report_id)
+    try:
+        export_job = await create_report_export(
+            session,
+            workspace_id,
+            report,
+            current_user.id,
+            export_create,
+        )
+    except ReportExportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return success_response(
+        ReportExportRead.model_validate(export_job),
+        message="report export created",
+    )
 
 
 @router.get("/{report_id}/sections", response_model=APIResponse[list[ReportSectionRead]])
@@ -304,3 +344,20 @@ async def get_report_section_or_404(
             detail="Report section not found",
         )
     return section
+
+
+@exports_router.get("/{export_id}", response_model=APIResponse[ReportExportRead])
+async def read_export_job_endpoint(
+    workspace_id: uuid.UUID,
+    export_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[ReportExportRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    export_job = await get_export_job_for_workspace(session, workspace_id, export_id)
+    if export_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export job not found",
+        )
+    return success_response(ReportExportRead.model_validate(export_job))

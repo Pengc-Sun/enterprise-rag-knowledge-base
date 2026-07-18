@@ -92,6 +92,9 @@ Main entities:
 - `ReviewDecision`: reviewer approve, edit, reject, or request-changes action with original and edited result snapshots.
 - `Report`: workspace-scoped formal report container with draft, ready, or exported status.
 - `ReportSection`: ordered report content block with markdown body, template key, source task keys, and source result IDs. Sections can only reference `approved` or reviewer-`edited` analysis results.
+- `ExportJob`: workspace-scoped report export tracking row with format, status, optional file path,
+  optional error message, creator, and metadata. Day 50 stores Markdown output in metadata; later
+  export days add file-backed downloads.
 - `AuditLog`: workspace-scoped event record for key workspace, member, document, directory, and review actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:
@@ -134,6 +137,8 @@ Authorization is enforced in service or endpoint logic through knowledge base an
   creating an export artifact.
 - Report editing and section ordering require workspace write access and update existing report or
   section rows in place.
+- Report export creation requires workspace write access. Export status reads require workspace read
+  access.
 - Deleting a workspace requires `owner`.
 - Workspace member endpoints cannot assign the `owner` role or modify/remove the workspace owner membership.
 
