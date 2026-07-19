@@ -409,6 +409,8 @@ v2.0 upgrade progress:
 - Week 4: template-driven workspace structure, workspace directory APIs, default knowledge-base creation, initial analysis tasks, draft report outlines, and template instantiation test coverage.
 - Week 5: analysis task/result APIs, workspace-scoped task execution, structured JSON output validation, normalized citations, deterministic provider behavior, and provider failure tests.
 - Week 6: reviewer workflow, review decisions, approve/edit/reject/request-changes state transitions, original AI output preservation, review queue APIs, reviewer permissions, and review audit logging.
+- Week 7: workspace-scoped report builder, approved-content report sections, Markdown preview, section ordering, and approved-only report workflow tests.
+- Week 8: Markdown, DOCX, and PDF exports, export storage/downloads, export-time approved-content gating, workspace dashboard metrics, and export storage persistence documentation.
 
 ## Development Logs
 
@@ -421,6 +423,8 @@ v2.0 upgrade progress:
 - `docs/development-log/v2-week-4.md`
 - `docs/development-log/v2-week-5.md`
 - `docs/development-log/v2-week-6.md`
+- `docs/development-log/v2-week-7.md`
+- `docs/development-log/v2-week-8.md`
 
 Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
@@ -597,6 +601,17 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Approved-content rule tests cover allowed statuses, blocked statuses, mixed generated sources, cross-workspace references, cleared sources, and omitted source updates.
 - Synthetic report workflow demo data is available in `docs/demo-data/report_workflow_demo.md`.
 - Week 7 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
+
+## v2.0 Week 8 Acceptance Status
+
+- Report export jobs support Markdown, DOCX, and PDF formats.
+- Markdown exports persist rendered Markdown, DOCX exports are generated through `python-docx`, and PDF exports are generated through a server-side renderer.
+- Export artifacts are written to `storage/exports/{workspace_id}/{export_id}/{filename}` and `export_jobs.file_path` records the stored path.
+- Export downloads are available through `/api/v1/workspaces/{workspace_id}/exports/{export_id}/download` with workspace read access.
+- Export creation revalidates report section source results so exported reports only include currently `approved` or reviewer-`edited` analysis results.
+- Workspace dashboard metrics summarize document, analysis task, review, report, and export status counts.
+- Deployment documentation explains `EXPORT_DIR`, `/app/storage` persistence, Docker volume behavior, restart validation, and backup expectations.
+- Week 8 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
 
 ## CI
 
