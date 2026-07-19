@@ -1,6 +1,7 @@
 import uuid
 from base64 import b64decode
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -327,7 +328,7 @@ async def test_get_export_job_for_workspace_returns_export_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_report_export_persists_completed_markdown_job() -> None:
+async def test_create_report_export_persists_completed_markdown_job(tmp_path: Path) -> None:
     workspace_id = uuid.uuid4()
     report = make_report(workspace_id)
     created_by = uuid.uuid4()
@@ -342,6 +343,7 @@ async def test_create_report_export_persists_completed_markdown_job() -> None:
         report,
         created_by,
         ReportExportCreate(format=ExportFormat.MARKDOWN),
+        tmp_path.as_posix(),
     )
 
     assert export_job.workspace_id == workspace_id
@@ -349,7 +351,10 @@ async def test_create_report_export_persists_completed_markdown_job() -> None:
     assert export_job.format == ExportFormat.MARKDOWN.value
     assert export_job.status == ExportJobStatus.COMPLETED.value
     assert export_job.created_by == created_by
-    assert export_job.file_path is None
+    assert export_job.file_path is not None
+    assert Path(export_job.file_path).read_text(encoding="utf-8") == (
+        "# Policy Review Report\n\n## Executive Summary\n\nApproved summary.\n"
+    )
     assert export_job.error_message is None
     assert export_job.export_metadata["section_count"] == 1
     assert export_job.export_metadata["markdown"] == (
@@ -361,7 +366,7 @@ async def test_create_report_export_persists_completed_markdown_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_report_export_persists_completed_docx_job() -> None:
+async def test_create_report_export_persists_completed_docx_job(tmp_path: Path) -> None:
     workspace_id = uuid.uuid4()
     report = make_report(workspace_id)
     created_by = uuid.uuid4()
@@ -376,6 +381,7 @@ async def test_create_report_export_persists_completed_docx_job() -> None:
         report,
         created_by,
         ReportExportCreate(format=ExportFormat.DOCX),
+        tmp_path.as_posix(),
     )
 
     assert export_job.format == ExportFormat.DOCX.value
@@ -386,13 +392,15 @@ async def test_create_report_export_persists_completed_docx_job() -> None:
     assert export_job.export_metadata["filename"] == "policy-review-report.docx"
     docx_bytes = b64decode(str(export_job.export_metadata["docx_base64"]))
     assert docx_bytes.startswith(b"PK")
+    assert export_job.file_path is not None
+    assert Path(export_job.file_path).read_bytes() == docx_bytes
     assert report.status == ReportStatus.EXPORTED.value
     assert session.added is export_job
     assert session.committed is True
 
 
 @pytest.mark.asyncio
-async def test_create_report_export_persists_completed_pdf_job() -> None:
+async def test_create_report_export_persists_completed_pdf_job(tmp_path: Path) -> None:
     workspace_id = uuid.uuid4()
     report = make_report(workspace_id)
     created_by = uuid.uuid4()
@@ -407,6 +415,7 @@ async def test_create_report_export_persists_completed_pdf_job() -> None:
         report,
         created_by,
         ReportExportCreate(format=ExportFormat.PDF),
+        tmp_path.as_posix(),
     )
 
     assert export_job.format == ExportFormat.PDF.value
@@ -415,6 +424,8 @@ async def test_create_report_export_persists_completed_pdf_job() -> None:
     assert export_job.export_metadata["filename"] == "policy-review-report.pdf"
     pdf_bytes = b64decode(str(export_job.export_metadata["pdf_base64"]))
     assert pdf_bytes.startswith(b"%PDF")
+    assert export_job.file_path is not None
+    assert Path(export_job.file_path).read_bytes() == pdf_bytes
     assert report.status == ReportStatus.EXPORTED.value
     assert session.added is export_job
     assert session.committed is True

@@ -93,8 +93,8 @@ Main entities:
 - `Report`: workspace-scoped formal report container with draft, ready, or exported status.
 - `ReportSection`: ordered report content block with markdown body, template key, source task keys, and source result IDs. Sections can only reference `approved` or reviewer-`edited` analysis results.
 - `ExportJob`: workspace-scoped report export tracking row with format, status, optional file path,
-  optional error message, creator, and metadata. Markdown output, DOCX bytes, and PDF bytes are stored in
-  metadata until later export days add file-backed downloads.
+  optional error message, creator, and metadata. Markdown, DOCX, and PDF exports are written to
+  configured export storage and exposed through an access-controlled download endpoint.
 - `AuditLog`: workspace-scoped event record for key workspace, member, document, directory, and review actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:

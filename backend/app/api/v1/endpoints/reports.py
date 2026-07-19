@@ -1,10 +1,13 @@
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies.auth import get_current_active_user
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
 from backend.app.models.report import Report, ReportSection
 from backend.app.models.user import User
@@ -124,6 +127,7 @@ async def create_report_export_endpoint(
     export_create: ReportExportCreate,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> APIResponse[ReportExportRead]:
     await get_workspace_or_404(session, workspace_id, current_user.id, WRITE_ROLES)
     report = await get_report_or_404(session, workspace_id, report_id)
@@ -134,6 +138,7 @@ async def create_report_export_endpoint(
             report,
             current_user.id,
             export_create,
+            settings.export_dir,
         )
     except ReportExportError as exc:
         raise HTTPException(
@@ -361,3 +366,41 @@ async def read_export_job_endpoint(
             detail="Export job not found",
         )
     return success_response(ReportExportRead.model_validate(export_job))
+
+
+@exports_router.get("/{export_id}/download", response_class=FileResponse)
+async def download_export_endpoint(
+    workspace_id: uuid.UUID,
+    export_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> FileResponse:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    export_job = await get_export_job_for_workspace(session, workspace_id, export_id)
+    if export_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export job not found",
+        )
+    if not export_job.file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export file not found",
+        )
+
+    export_path = Path(export_job.file_path)
+    if not export_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export file not found",
+        )
+
+    filename = str(export_job.export_metadata.get("filename") or export_path.name)
+    content_type = str(
+        export_job.export_metadata.get("content_type") or "application/octet-stream"
+    )
+    return FileResponse(
+        path=export_path,
+        filename=filename,
+        media_type=content_type,
+    )

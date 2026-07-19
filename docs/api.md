@@ -830,9 +830,9 @@ POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/exports
 ```
 
 Requires workspace owner or admin. Markdown, DOCX, and PDF export jobs are marked `completed`
-immediately. Markdown exports store rendered Markdown in export metadata. DOCX and PDF exports store
-base64 encoded file payloads in export metadata. File storage paths and download URLs are added by
-later export workflow days.
+immediately. Every export writes a file under the configured export storage directory and records the
+path in `file_path`. Markdown exports also store rendered Markdown in export metadata. DOCX and PDF
+exports also store base64 encoded file payloads in export metadata for API inspection.
 
 Request body:
 
@@ -849,15 +849,17 @@ Response data:
   "id": "8df873e9-7f97-4ea5-b60c-5a8e29c92025",
   "workspace_id": "f196aa9b-32b9-4d37-9343-f7efe7182b42",
   "report_id": "80d2854c-96c9-466c-9360-71116f1c49c0",
-  "format": "markdown",
+  "format": "pdf",
   "status": "completed",
-  "file_path": null,
+  "file_path": "storage/exports/f196aa9b-32b9-4d37-9343-f7efe7182b42/8df873e9-7f97-4ea5-b60c-5a8e29c92025/policy-review-report.pdf",
   "error_message": null,
   "created_by": "aa0894e2-9624-44dd-915e-d23548956335",
   "export_metadata": {
     "title": "Policy Review Report",
     "section_count": 2,
-    "markdown": "# Policy Review Report\n\n## Policy Requirements\n\n..."
+    "filename": "policy-review-report.pdf",
+    "content_type": "application/pdf",
+    "pdf_base64": "JVBERi0..."
   }
 }
 ```
@@ -894,6 +896,16 @@ GET /api/v1/workspaces/{workspace_id}/exports/{export_id}
 
 Requires workspace read access. Returns export format, status, file path when available, error
 message, creator, and metadata.
+
+### Download export file
+
+```text
+GET /api/v1/workspaces/{workspace_id}/exports/{export_id}/download
+```
+
+Requires workspace read access. Returns the stored Markdown, DOCX, or PDF file with the export
+metadata filename and content type. Returns `404 not_found` if the export job does not exist or the
+stored file is missing.
 
 ### List report sections
 

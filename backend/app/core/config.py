@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     upload_dir: str = "storage/uploads"
+    export_dir: str = "storage/exports"
     max_upload_size_bytes: int = 10 * 1024 * 1024
     embedding_dimension: int = 1536
     embedding_provider: str = "deterministic"

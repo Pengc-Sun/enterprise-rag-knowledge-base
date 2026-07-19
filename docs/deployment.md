@@ -197,6 +197,8 @@ The production-style stack starts:
 - `redis`: `redis:7-alpine` with append-only persistence and `redis-prod-data` volume.
 - `migrate`: one-shot Alembic upgrade service.
 - `backend`: FastAPI backend with `storage-prod-data` mounted at `/app/storage`.
+  Uploaded documents use `UPLOAD_DIR` and report exports use `EXPORT_DIR`; both should point under
+  the persistent storage mount in Docker deployments.
 - `frontend`: Nginx-served React build, exposing `${FRONTEND_PORT:-8080}`.
 
 Default production-style URL:
@@ -225,7 +227,7 @@ Production-style named volumes:
 
 - `postgres-prod-data`: database files.
 - `redis-prod-data`: Redis append-only data.
-- `storage-prod-data`: uploaded documents and local storage.
+- `storage-prod-data`: uploaded documents, generated report exports, and local storage.
 
 Development named volume:
 
@@ -272,7 +274,7 @@ Before sharing or deploying:
 - Run `make check`.
 - Run frontend `pnpm typecheck` and `pnpm build`.
 - Confirm GitHub Actions passes.
-- Confirm upload storage volume is persistent.
+- Confirm upload and export storage volumes are persistent.
 - Confirm provider API keys, model names, base URLs, and embedding dimensions are configured if deterministic providers are not used.
 
 ## Current Deployment Scope

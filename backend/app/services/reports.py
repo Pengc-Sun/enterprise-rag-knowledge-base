@@ -3,6 +3,7 @@ from base64 import b64encode
 from collections.abc import Iterable
 from io import BytesIO
 from json import dumps
+from pathlib import Path
 
 from docx import Document as DocxDocument
 from reportlab.lib.pagesizes import LETTER  # type: ignore[import-untyped]
@@ -182,6 +183,7 @@ async def create_report_export(
     report: Report,
     created_by: uuid.UUID,
     export_create: ReportExportCreate,
+    export_dir: str = "storage/exports",
 ) -> ExportJob:
     if export_create.format not in {
         ExportFormat.MARKDOWN,
@@ -191,13 +193,22 @@ async def create_report_export(
         raise ReportExportError("Only markdown, docx, and pdf export are supported")
 
     preview = await build_report_preview(session, workspace_id, report)
-    export_metadata = build_export_metadata(export_create.format, preview)
+    export_metadata, export_bytes = build_export_artifact(export_create.format, preview)
+    export_id = uuid.uuid4()
+    file_path = write_export_file(
+        export_dir,
+        workspace_id,
+        export_id,
+        str(export_metadata["filename"]),
+        export_bytes,
+    )
     export_job = ExportJob(
+        id=export_id,
         workspace_id=workspace_id,
         report_id=report.id,
         format=export_create.format.value,
         status=ExportJobStatus.COMPLETED.value,
-        file_path=None,
+        file_path=file_path,
         error_message=None,
         created_by=created_by,
         export_metadata=export_metadata,
@@ -214,13 +225,24 @@ def build_export_metadata(
     export_format: ExportFormat,
     preview: ReportPreviewRead,
 ) -> dict[str, object]:
+    metadata, _ = build_export_artifact(export_format, preview)
+    return metadata
+
+
+def build_export_artifact(
+    export_format: ExportFormat,
+    preview: ReportPreviewRead,
+) -> tuple[dict[str, object], bytes]:
     metadata: dict[str, object] = {
         "title": preview.title,
         "section_count": preview.section_count,
     }
     if export_format == ExportFormat.MARKDOWN:
+        markdown_bytes = preview.markdown.encode("utf-8")
         metadata["markdown"] = preview.markdown
-        return metadata
+        metadata["content_type"] = "text/markdown; charset=utf-8"
+        metadata["filename"] = f"{_export_filename_stem(preview.title)}.md"
+        return metadata, markdown_bytes
     if export_format == ExportFormat.DOCX:
         docx_bytes = render_report_docx(preview)
         metadata["docx_base64"] = b64encode(docx_bytes).decode("ascii")
@@ -228,14 +250,28 @@ def build_export_metadata(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         metadata["filename"] = f"{_export_filename_stem(preview.title)}.docx"
-        return metadata
+        return metadata, docx_bytes
     if export_format == ExportFormat.PDF:
         pdf_bytes = render_report_pdf(preview)
         metadata["pdf_base64"] = b64encode(pdf_bytes).decode("ascii")
         metadata["content_type"] = "application/pdf"
         metadata["filename"] = f"{_export_filename_stem(preview.title)}.pdf"
-        return metadata
+        return metadata, pdf_bytes
     raise ReportExportError("Unsupported export format")
+
+
+def write_export_file(
+    export_dir: str,
+    workspace_id: uuid.UUID,
+    export_id: uuid.UUID,
+    filename: str,
+    content: bytes,
+) -> str:
+    export_directory = Path(export_dir) / str(workspace_id) / str(export_id)
+    export_directory.mkdir(parents=True, exist_ok=True)
+    export_path = export_directory / filename
+    export_path.write_bytes(content)
+    return export_path.as_posix()
 
 
 def render_report_docx(preview: ReportPreviewRead) -> bytes:

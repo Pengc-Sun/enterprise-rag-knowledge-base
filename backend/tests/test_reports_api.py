@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -448,11 +449,13 @@ def test_create_report_export_returns_completed_markdown_job(
         report: Report,
         created_by: uuid.UUID,
         export_create: ReportExportCreate,
+        export_dir: str,
     ) -> ExportJob:
         assert workspace_id == workspace.id
         assert report.id == report.id
         assert created_by == user.id
         assert export_create.format == ExportFormat.MARKDOWN
+        assert export_dir == "storage/exports"
         return export_job
 
     monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
@@ -514,8 +517,10 @@ def test_create_report_export_returns_completed_docx_job(
         report: Report,
         created_by: uuid.UUID,
         export_create: ReportExportCreate,
+        export_dir: str,
     ) -> ExportJob:
         assert export_create.format == ExportFormat.DOCX
+        assert export_dir == "storage/exports"
         return export_job
 
     monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
@@ -574,8 +579,10 @@ def test_create_report_export_returns_completed_pdf_job(
         report: Report,
         created_by: uuid.UUID,
         export_create: ReportExportCreate,
+        export_dir: str,
     ) -> ExportJob:
         assert export_create.format == ExportFormat.PDF
+        assert export_dir == "storage/exports"
         return export_job
 
     monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
@@ -643,6 +650,112 @@ def test_read_export_job_returns_workspace_export_status(
     body = response.json()
     assert body["data"]["id"] == str(export_job.id)
     assert body["data"]["status"] == "completed"
+
+
+def test_download_export_returns_stored_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    export_path = tmp_path / "policy-review-report.pdf"
+    export_path.write_bytes(b"%PDF test export")
+    export_job = make_export_job(workspace.id, report.id, user.id, ExportFormat.PDF)
+    export_job.file_path = export_path.as_posix()
+    export_job.export_metadata = {
+        "filename": "policy-review-report.pdf",
+        "content_type": "application/pdf",
+        "section_count": 1,
+    }
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == READ_ROLES
+        return workspace
+
+    async def fake_get_export_job_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        export_id: uuid.UUID,
+    ) -> ExportJob:
+        assert workspace_id == workspace.id
+        assert export_id == export_job.id
+        return export_job
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        report_endpoints,
+        "get_export_job_for_workspace",
+        fake_get_export_job_for_workspace,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/exports/{export_job.id}/download"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF test export"
+    assert response.headers["content-type"] == "application/pdf"
+    assert "policy-review-report.pdf" in response.headers["content-disposition"]
+
+
+def test_download_export_returns_404_when_file_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    export_job = make_export_job(workspace.id, report.id, user.id, ExportFormat.PDF)
+    export_job.file_path = "storage/exports/missing.pdf"
+    export_job.export_metadata = {
+        "filename": "missing.pdf",
+        "content_type": "application/pdf",
+    }
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == READ_ROLES
+        return workspace
+
+    async def fake_get_export_job_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        export_id: uuid.UUID,
+    ) -> ExportJob:
+        return export_job
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        report_endpoints,
+        "get_export_job_for_workspace",
+        fake_get_export_job_for_workspace,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/workspaces/{workspace.id}/exports/{export_job.id}/download"
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Export file not found"
 
 
 def test_create_report_section_returns_400_for_unreportable_sources(
@@ -1009,6 +1122,7 @@ def test_report_routes_are_registered_in_openapi() -> None:
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/preview" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/exports" in paths
     assert "/api/v1/workspaces/{workspace_id}/exports/{export_id}" in paths
+    assert "/api/v1/workspaces/{workspace_id}/exports/{export_id}/download" in paths
     assert "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections" in paths
     assert (
         "/api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/reorder"
