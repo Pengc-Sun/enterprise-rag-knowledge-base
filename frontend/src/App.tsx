@@ -3,9 +3,11 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AnalysisTasksPage } from './pages/AnalysisTasksPage';
 import { ChatPage } from './pages/ChatPage';
 import { DocumentsPage } from './pages/DocumentsPage';
+import { ExportsPage } from './pages/ExportsPage';
 import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ReportBuilderPage } from './pages/ReportBuilderPage';
 import { ReviewQueuePage } from './pages/ReviewQueuePage';
 import { WorkspaceCreatePage } from './pages/WorkspaceCreatePage';
 import { WorkspaceDashboardPage } from './pages/WorkspaceDashboardPage';
@@ -94,6 +96,22 @@ export function App() {
         element={
           <ProtectedRoute>
             <ReviewQueuePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/reports"
+        element={
+          <ProtectedRoute>
+            <ReportBuilderPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/exports"
+        element={
+          <ProtectedRoute>
+            <ExportsPage />
           </ProtectedRoute>
         }
       />

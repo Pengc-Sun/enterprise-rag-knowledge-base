@@ -146,6 +146,84 @@ export type AnalysisReviewQueueItem = {
   analysis_task: AnalysisTask;
 };
 
+export type ReportStatus = 'draft' | 'ready' | 'exported';
+
+export type ReportSectionStatus = 'draft' | 'approved';
+
+export type ExportFormat = 'markdown' | 'docx' | 'pdf';
+
+export type ExportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type Report = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  status: ReportStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportPayload = {
+  title: string;
+};
+
+export type ReportPreview = {
+  report_id: string;
+  workspace_id: string;
+  title: string;
+  status: ReportStatus;
+  section_count: number;
+  markdown: string;
+};
+
+export type ReportSection = {
+  id: string;
+  report_id: string;
+  workspace_id: string;
+  template_section_key: string | null;
+  title: string;
+  body_markdown: string;
+  source_task_keys: string[];
+  source_result_ids: string[];
+  sort_order: number;
+  status: ReportSectionStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportSectionPayload = {
+  template_section_key?: string | null;
+  title: string;
+  body_markdown?: string;
+  source_task_keys?: string[];
+  source_result_ids?: string[];
+  sort_order?: number;
+};
+
+export type ReportSectionUpdatePayload = Partial<ReportSectionPayload>;
+
+export type ReportSectionGeneratePayload = {
+  analysis_result_ids: string[];
+  template_section_key?: string | null;
+  title?: string | null;
+  sort_order?: number;
+};
+
+export type ReportExport = {
+  id: string;
+  workspace_id: string;
+  report_id: string;
+  format: ExportFormat;
+  status: ExportJobStatus;
+  file_path: string | null;
+  error_message: string | null;
+  created_by: string | null;
+  export_metadata: JsonObject;
+  created_at: string;
+  updated_at: string;
+};
+
 
 export type KnowledgeBaseVisibility = 'private' | 'public';
 
