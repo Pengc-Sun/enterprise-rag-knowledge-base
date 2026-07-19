@@ -85,6 +85,42 @@ export type WorkspaceDashboard = {
   exports: WorkspaceDashboardStatusMetric;
 };
 
+export type AnalysisTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type AnalysisResultStatus = 'ai_generated' | 'needs_review' | 'approved' | 'edited' | 'rejected';
+
+export type JsonObject = Record<string, unknown>;
+
+export type AnalysisTask = {
+  id: string;
+  workspace_id: string;
+  template_task_key: string | null;
+  name: string;
+  description: string | null;
+  task_type: string;
+  status: AnalysisTaskStatus;
+  input_scope: JsonObject;
+  output_schema: JsonObject;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnalysisResult = {
+  id: string;
+  workspace_id: string;
+  analysis_task_id: string;
+  status: AnalysisResultStatus;
+  result: JsonObject;
+  citations: JsonObject[];
+  confidence: number | null;
+  model: string | null;
+  provider: string | null;
+  token_usage: JsonObject;
+  created_at: string;
+  updated_at: string;
+};
+
 
 export type KnowledgeBaseVisibility = 'private' | 'public';
 

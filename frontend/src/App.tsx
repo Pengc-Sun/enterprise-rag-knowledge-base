@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AnalysisTasksPage } from './pages/AnalysisTasksPage';
 import { ChatPage } from './pages/ChatPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
@@ -76,6 +77,14 @@ export function App() {
         element={
           <ProtectedRoute>
             <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/analysis-tasks"
+        element={
+          <ProtectedRoute>
+            <AnalysisTasksPage />
           </ProtectedRoute>
         }
       />

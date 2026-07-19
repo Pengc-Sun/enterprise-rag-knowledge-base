@@ -825,19 +825,26 @@ code {
 .status-uploaded,
 .status-parsing,
 .status-chunking,
-.status-embedding {
+.status-embedding,
+.status-pending,
+.status-running,
+.status-ai_generated,
+.status-needs_review {
   color: #543c00;
   background: #fff5ce;
   border: 1px solid #ead58d;
 }
 
-.status-completed {
+.status-completed,
+.status-approved,
+.status-edited {
   color: #167153;
   background: #e8f5ef;
   border: 1px solid #b9ddcd;
 }
 
-.status-failed {
+.status-failed,
+.status-rejected {
   color: #8a1f1b;
   background: #fff1ef;
   border: 1px solid #f0beb8;
@@ -856,6 +863,111 @@ code {
 
   .upload-form .inline-button {
     width: 100%;
+  }
+}
+
+.analysis-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.analysis-sidebar,
+.analysis-detail,
+.analysis-result-panel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.analysis-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.analysis-task-item {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  color: #283443;
+  text-align: left;
+  background: #fbfcfe;
+  border: 1px solid #d9dee7;
+  border-radius: 7px;
+}
+
+.analysis-task-item:hover,
+.analysis-task-item.active {
+  background: #edf7fa;
+  border-color: #8fc8d8;
+}
+
+.analysis-task-item span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.analysis-task-item strong,
+.analysis-task-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-task-item small {
+  color: #697386;
+  font-size: 0.78rem;
+}
+
+.analysis-result-grid,
+.analysis-schema-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.analysis-result-grid > div,
+.analysis-schema-grid > div {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.analysis-result-grid pre,
+.analysis-schema-grid pre {
+  max-height: 420px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  color: #26313d;
+  background: #f6f7f9;
+  border: 1px solid #d9dee7;
+  border-radius: 7px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.analysis-schema-grid {
+  padding-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .analysis-layout,
+  .analysis-result-grid,
+  .analysis-schema-grid {
+    grid-template-columns: 1fr;
   }
 }
 
