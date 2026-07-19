@@ -411,6 +411,7 @@ v2.0 upgrade progress:
 - Week 6: reviewer workflow, review decisions, approve/edit/reject/request-changes state transitions, original AI output preservation, review queue APIs, reviewer permissions, and review audit logging.
 - Week 7: workspace-scoped report builder, approved-content report sections, Markdown preview, section ordering, and approved-only report workflow tests.
 - Week 8: Markdown, DOCX, and PDF exports, export storage/downloads, export-time approved-content gating, workspace dashboard metrics, and export storage persistence documentation.
+- Week 9: React workspace experience, workspace list/create/template selection, workspace dashboard navigation, workspace-scoped knowledge-base/document/chat routes, analysis task runner, review queue UI, report builder, exports UI, and frontend regression validation.
 
 ## Development Logs
 
@@ -425,6 +426,7 @@ v2.0 upgrade progress:
 - `docs/development-log/v2-week-6.md`
 - `docs/development-log/v2-week-7.md`
 - `docs/development-log/v2-week-8.md`
+- `docs/development-log/v2-week-9.md`
 
 Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
@@ -612,6 +614,18 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Workspace dashboard metrics summarize document, analysis task, review, report, and export status counts.
 - Deployment documentation explains `EXPORT_DIR`, `/app/storage` persistence, Docker volume behavior, restart validation, and backup expectations.
 - Week 8 close-out verification passed with pytest, Ruff, mypy, Alembic head checks, and `git diff --check`.
+
+## v2.0 Week 9 Acceptance Status
+
+- The React frontend now starts from workspace list and workspace creation pages.
+- Workspace creation supports built-in template selection and shows template directories, analysis tasks, and report outline counts.
+- Workspace dashboard and nested workspace navigation expose dashboard, knowledge bases, documents, analysis, review, reports, exports, and members sections.
+- Knowledge-base, document, and chat pages support workspace-scoped routes while preserving legacy routes for compatibility.
+- Analysis task UI lists template-created tasks, runs tasks, shows status, and displays latest structured result output with citations.
+- Review queue UI lists AI-generated results and supports reviewer approve, edit, and reject decisions.
+- Report builder UI supports report creation, section editing, generating sections from approved or edited analysis results, preview, and Markdown/DOCX/PDF export creation.
+- Exports UI supports recent export lookup, export ID lookup, and file download.
+- Week 9 close-out verification passed with frontend typecheck, frontend production build, Vite SPA route smoke tests, backend pytest, Ruff, mypy, and `git diff --check`.
 
 ## CI
 
