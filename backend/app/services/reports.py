@@ -153,13 +153,22 @@ async def build_report_preview(
     report: Report,
 ) -> ReportPreviewRead:
     sections = await list_report_sections_for_report(session, workspace_id, report.id)
+    return build_report_preview_from_sections(workspace_id, report, sections)
+
+
+def build_report_preview_from_sections(
+    workspace_id: uuid.UUID,
+    report: Report,
+    sections: Iterable[ReportSection],
+) -> ReportPreviewRead:
+    section_list = list(sections)
     return ReportPreviewRead(
         report_id=report.id,
         workspace_id=workspace_id,
         title=report.title,
         status=ReportStatus(report.status),
-        section_count=len(sections),
-        markdown=render_report_preview_markdown(report, sections),
+        section_count=len(section_list),
+        markdown=render_report_preview_markdown(report, section_list),
     )
 
 
@@ -192,7 +201,9 @@ async def create_report_export(
     }:
         raise ReportExportError("Only markdown, docx, and pdf export are supported")
 
-    preview = await build_report_preview(session, workspace_id, report)
+    sections = await list_report_sections_for_report(session, workspace_id, report.id)
+    await validate_report_export_sections(session, workspace_id, sections)
+    preview = build_report_preview_from_sections(workspace_id, report, sections)
     export_metadata, export_bytes = build_export_artifact(export_create.format, preview)
     export_id = uuid.uuid4()
     file_path = write_export_file(
@@ -272,6 +283,24 @@ def write_export_file(
     export_path = export_directory / filename
     export_path.write_bytes(content)
     return export_path.as_posix()
+
+
+async def validate_report_export_sections(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    sections: Iterable[ReportSection],
+) -> None:
+    source_result_ids = [
+        source_result_id
+        for section in sections
+        for source_result_id in section.source_result_ids
+    ]
+    try:
+        await validate_report_section_source_results(session, workspace_id, source_result_ids)
+    except ReportSectionSourceError as exc:
+        raise ReportExportError(
+            "Report exports can only include approved or edited analysis results"
+        ) from exc
 
 
 def render_report_docx(preview: ReportPreviewRead) -> bytes:

@@ -426,6 +426,15 @@ def test_create_report_export_returns_completed_markdown_job(
     workspace = make_workspace(user.id)
     report = make_report(workspace.id, user.id)
     export_job = make_export_job(workspace.id, report.id, user.id)
+    export_job.file_path = (
+        f"storage/exports/{workspace.id}/{export_job.id}/policy-review-report.md"
+    )
+    export_job.export_metadata = {
+        "filename": "policy-review-report.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "section_count": 1,
+        "markdown": "# Policy Review Report\n",
+    }
 
     async def fake_get_workspace_for_user(
         session: AsyncSession,
@@ -613,6 +622,15 @@ def test_read_export_job_returns_workspace_export_status(
     workspace = make_workspace(user.id)
     report = make_report(workspace.id, user.id)
     export_job = make_export_job(workspace.id, report.id, user.id)
+    export_job.file_path = (
+        f"storage/exports/{workspace.id}/{export_job.id}/policy-review-report.md"
+    )
+    export_job.export_metadata = {
+        "filename": "policy-review-report.md",
+        "content_type": "text/markdown; charset=utf-8",
+        "section_count": 1,
+        "markdown": "# Policy Review Report\n",
+    }
 
     async def fake_get_workspace_for_user(
         session: AsyncSession,
@@ -650,6 +668,8 @@ def test_read_export_job_returns_workspace_export_status(
     body = response.json()
     assert body["data"]["id"] == str(export_job.id)
     assert body["data"]["status"] == "completed"
+    assert body["data"]["file_path"] == export_job.file_path
+    assert body["data"]["export_metadata"]["filename"] == "policy-review-report.md"
 
 
 def test_download_export_returns_stored_file(

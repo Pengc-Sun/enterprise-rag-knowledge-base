@@ -27,6 +27,7 @@ from backend.app.schemas.report import (
     ReportUpdate,
 )
 from backend.app.services.reports import (
+    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
@@ -429,6 +430,74 @@ async def test_create_report_export_persists_completed_pdf_job(tmp_path: Path) -
     assert report.status == ReportStatus.EXPORTED.value
     assert session.added is export_job
     assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_report_export_allows_currently_approved_sources(tmp_path: Path) -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    created_by = uuid.uuid4()
+    task = make_analysis_task(workspace_id)
+    analysis_result = make_analysis_result(
+        workspace_id,
+        task.id,
+        AnalysisResultStatus.APPROVED.value,
+    )
+    section = make_section(workspace_id, report.id)
+    section.source_result_ids = [str(analysis_result.id)]
+    session = FakeSession(
+        [
+            FakeResult(items=[section]),
+            FakeResult(items=[(analysis_result, task)]),
+        ]
+    )
+
+    export_job = await create_report_export(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report,
+        created_by,
+        ReportExportCreate(format=ExportFormat.MARKDOWN),
+        tmp_path.as_posix(),
+    )
+
+    assert export_job.status == ExportJobStatus.COMPLETED.value
+    assert export_job.file_path is not None
+    assert Path(export_job.file_path).is_file()
+    assert len(session.statements) == 2
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
+async def test_create_report_export_rejects_unapproved_sources(tmp_path: Path) -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    stale_source_id = uuid.uuid4()
+    section = make_section(workspace_id, report.id)
+    section.source_result_ids = [str(stale_source_id)]
+    session = FakeSession(
+        [
+            FakeResult(items=[section]),
+            FakeResult(items=[]),
+        ]
+    )
+
+    with pytest.raises(
+        ReportExportError,
+        match="Report exports can only include approved or edited analysis results",
+    ):
+        await create_report_export(
+            session,  # type: ignore[arg-type]
+            workspace_id,
+            report,
+            uuid.uuid4(),
+            ReportExportCreate(format=ExportFormat.MARKDOWN),
+            tmp_path.as_posix(),
+        )
+
+    assert session.added is None
+    assert session.committed is False
+    assert not list(tmp_path.rglob("*"))
 
 
 def test_render_report_docx_returns_docx_bytes() -> None:

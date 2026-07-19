@@ -900,6 +900,8 @@ Requires workspace owner or admin. Markdown, DOCX, and PDF export jobs are marke
 immediately. Every export writes a file under the configured export storage directory and records the
 path in `file_path`. Markdown exports also store rendered Markdown in export metadata. DOCX and PDF
 exports also store base64 encoded file payloads in export metadata for API inspection.
+Before writing the export file, the backend revalidates every referenced analysis result; exports
+are rejected if any report section references a result that is no longer `approved` or `edited`.
 
 Request body:
 

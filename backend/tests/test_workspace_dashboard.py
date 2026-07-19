@@ -76,6 +76,24 @@ def test_build_status_metric_fills_missing_statuses() -> None:
     assert metric.by_status[DocumentStatus.FAILED.value] == 0
 
 
+def test_build_status_metric_counts_export_statuses() -> None:
+    metric = build_status_metric(
+        {
+            ExportJobStatus.PENDING.value: 1,
+            ExportJobStatus.RUNNING.value: 2,
+            ExportJobStatus.COMPLETED.value: 3,
+            ExportJobStatus.FAILED.value: 4,
+        },
+        ExportJobStatus,
+    )
+
+    assert metric.total == 10
+    assert metric.by_status[ExportJobStatus.PENDING.value] == 1
+    assert metric.by_status[ExportJobStatus.RUNNING.value] == 2
+    assert metric.by_status[ExportJobStatus.COMPLETED.value] == 3
+    assert metric.by_status[ExportJobStatus.FAILED.value] == 4
+
+
 def test_complete_counts_fills_missing_enum_values() -> None:
     counts = complete_counts({ReviewDecisionType.REJECT.value: 1}, ReviewDecisionType)
 
