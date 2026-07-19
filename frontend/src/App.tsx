@@ -6,6 +6,7 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ReviewQueuePage } from './pages/ReviewQueuePage';
 import { WorkspaceCreatePage } from './pages/WorkspaceCreatePage';
 import { WorkspaceDashboardPage } from './pages/WorkspaceDashboardPage';
 import { WorkspaceListPage } from './pages/WorkspaceListPage';
@@ -85,6 +86,14 @@ export function App() {
         element={
           <ProtectedRoute>
             <AnalysisTasksPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/review"
+        element={
+          <ProtectedRoute>
+            <ReviewQueuePage />
           </ProtectedRoute>
         }
       />

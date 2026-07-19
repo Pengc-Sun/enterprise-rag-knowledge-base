@@ -121,6 +121,31 @@ export type AnalysisResult = {
   updated_at: string;
 };
 
+export type ReviewDecisionType = 'approve' | 'edit' | 'reject' | 'request_changes';
+
+export type ReviewDecision = {
+  id: string;
+  workspace_id: string;
+  analysis_result_id: string;
+  reviewer_id: string | null;
+  decision: ReviewDecisionType;
+  comment: string | null;
+  original_result: JsonObject;
+  edited_result: JsonObject | null;
+  created_at: string;
+};
+
+export type ReviewDecisionPayload = {
+  decision: ReviewDecisionType;
+  comment?: string | null;
+  edited_result?: JsonObject | null;
+};
+
+export type AnalysisReviewQueueItem = {
+  analysis_result: AnalysisResult;
+  analysis_task: AnalysisTask;
+};
+
 
 export type KnowledgeBaseVisibility = 'private' | 'public';
 

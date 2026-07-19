@@ -130,6 +130,17 @@ h2 {
   box-shadow: 0 0 0 3px rgb(23 107 135 / 16%);
 }
 
+.compact-select {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  color: #121821;
+  background: #fbfcfe;
+  border: 1px solid #cbd3df;
+  border-radius: 6px;
+  outline: none;
+}
+
 .primary-button,
 .secondary-button,
 .danger-button {
@@ -963,10 +974,105 @@ code {
   padding-top: 4px;
 }
 
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.review-sidebar,
+.review-detail,
+.review-actions-panel {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.review-item {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 13px;
+  color: #283443;
+  text-align: left;
+  background: #fbfcfe;
+  border: 1px solid #d9dee7;
+  border-radius: 7px;
+}
+
+.review-item:hover,
+.review-item.active {
+  background: #edf7fa;
+  border-color: #8fc8d8;
+}
+
+.review-item span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.review-item strong,
+.review-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-item small {
+  color: #697386;
+  font-size: 0.82rem;
+}
+
+.review-output-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.review-output-grid > div,
+.review-edit-form {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.review-output-grid pre,
+.review-edit-form textarea {
+  max-height: 460px;
+  margin: 0;
+  overflow: auto;
+  color: #26313d;
+  background: #f6f7f9;
+  border: 1px solid #d9dee7;
+  border-radius: 7px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.review-output-grid pre {
+  padding: 14px;
+}
+
 @media (max-width: 900px) {
   .analysis-layout,
   .analysis-result-grid,
-  .analysis-schema-grid {
+  .analysis-schema-grid,
+  .review-layout,
+  .review-output-grid {
     grid-template-columns: 1fr;
   }
 }
