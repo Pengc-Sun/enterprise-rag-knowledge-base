@@ -1,11 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ChatPage } from './pages/ChatPage';
-import { DashboardPage } from './pages/DashboardPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { WorkspaceCreatePage } from './pages/WorkspaceCreatePage';
+import { WorkspaceListPage } from './pages/WorkspaceListPage';
 
 export function App() {
   return (
@@ -16,7 +17,23 @@ export function App() {
         path="/"
         element={
           <ProtectedRoute>
-            <DashboardPage />
+            <WorkspaceListPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces"
+        element={
+          <ProtectedRoute>
+            <WorkspaceListPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/new"
+        element={
+          <ProtectedRoute>
+            <WorkspaceCreatePage />
           </ProtectedRoute>
         }
       />

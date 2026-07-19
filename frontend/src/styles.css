@@ -238,6 +238,13 @@ h2 {
   margin-top: 4px;
 }
 
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .status-band {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -494,26 +501,120 @@ code {
   text-align: center;
 }
 
+.compact-empty {
+  min-height: 220px;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-list-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: #fbfcfe;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.workspace-card-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workspace-card-main div {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-card-main p,
+.template-option small,
+.template-option em {
+  color: #596171;
+}
+
+.compact-metadata {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workspace-create-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.template-list {
+  display: grid;
+  gap: 10px;
+}
+
+.template-option {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  background: #fbfcfe;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.template-option:hover,
+.template-option.active {
+  background: #edf7fa;
+  border-color: #8fc8d8;
+}
+
+.template-option input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: #176b87;
+}
+
+.template-option span {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.template-option small,
+.template-option em {
+  font-size: 0.88rem;
+  font-style: normal;
+}
+
 @media (max-width: 900px) {
   .kb-layout,
-  .two-column-form {
+  .two-column-form,
+  .workspace-create-layout {
     grid-template-columns: 1fr;
   }
 
-  .metadata-grid {
+  .metadata-grid,
+  .compact-metadata {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
   .detail-header,
-  .section-heading {
+  .section-heading,
+  .workspace-card-main {
     flex-direction: column;
   }
 
   .inline-button,
   .compact-button,
-  .form-actions .danger-button {
+  .form-actions .danger-button,
+  .topbar-actions,
+  .topbar-actions .secondary-button {
     width: 100%;
   }
 }

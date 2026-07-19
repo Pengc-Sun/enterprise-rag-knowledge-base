@@ -30,6 +30,43 @@ export type RegisterPayload = {
   password: string;
 };
 
+export type WorkspaceStatus = 'active' | 'archived';
+
+export type WorkspaceTemplateCategory = 'general' | 'policy_review' | 'it_support' | 'research_review';
+
+export type Workspace = {
+  id: string;
+  owner_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  template_id: string | null;
+  status: WorkspaceStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspacePayload = {
+  name: string;
+  slug: string;
+  description?: string | null;
+  template_id?: string | null;
+};
+
+export type WorkspaceTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: WorkspaceTemplateCategory;
+  version: string;
+  is_active: boolean;
+  directory_schema: Record<string, unknown>;
+  analysis_task_schema: Record<string, unknown>;
+  report_schema: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 
 export type KnowledgeBaseVisibility = 'private' | 'public';
 
