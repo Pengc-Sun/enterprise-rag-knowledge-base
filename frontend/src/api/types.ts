@@ -67,6 +67,24 @@ export type WorkspaceTemplate = {
   updated_at: string;
 };
 
+export type WorkspaceDashboardStatusMetric = {
+  total: number;
+  by_status: Record<string, number>;
+};
+
+export type WorkspaceDashboardReviewMetric = WorkspaceDashboardStatusMetric & {
+  by_decision: Record<string, number>;
+};
+
+export type WorkspaceDashboard = {
+  workspace_id: string;
+  documents: WorkspaceDashboardStatusMetric;
+  analysis_tasks: WorkspaceDashboardStatusMetric;
+  reviews: WorkspaceDashboardReviewMetric;
+  reports: WorkspaceDashboardStatusMetric;
+  exports: WorkspaceDashboardStatusMetric;
+};
+
 
 export type KnowledgeBaseVisibility = 'private' | 'public';
 

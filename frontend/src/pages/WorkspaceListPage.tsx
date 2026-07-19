@@ -99,7 +99,12 @@ export function WorkspaceListPage() {
                     <h2>{workspace.name}</h2>
                     <p>{workspace.description || 'No description provided.'}</p>
                   </div>
-                  <span className="visibility-badge">{workspace.status}</span>
+                  <div className="workspace-card-actions">
+                    <span className="visibility-badge">{workspace.status}</span>
+                    <Link className="secondary-button compact-button nav-button" to={`/workspaces/${workspace.id}`}>
+                      Open
+                    </Link>
+                  </div>
                 </div>
                 <dl className="metadata-grid compact-metadata">
                   <div>

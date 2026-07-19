@@ -526,6 +526,13 @@ code {
   gap: 16px;
 }
 
+.workspace-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .workspace-card-main div {
   display: grid;
   gap: 6px;
@@ -590,10 +597,98 @@ code {
   font-style: normal;
 }
 
+.workspace-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.workspace-nav-link {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  color: #283443;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.workspace-nav-link:hover,
+.workspace-nav-link.active {
+  color: #114f64;
+  background: #edf7fa;
+  border-color: #8fc8d8;
+  text-decoration: none;
+}
+
+.dashboard-summary-grid,
+.dashboard-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-card,
+.dashboard-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+}
+
+.summary-card strong {
+  color: #176b87;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.dashboard-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-card-header strong {
+  color: #176b87;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.status-list {
+  display: grid;
+  gap: 8px;
+}
+
+.status-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #e5e9f0;
+}
+
+.status-list-row span {
+  color: #596171;
+  text-transform: capitalize;
+}
+
 @media (max-width: 900px) {
   .kb-layout,
   .two-column-form,
-  .workspace-create-layout {
+  .workspace-create-layout,
+  .dashboard-summary-grid,
+  .dashboard-card-grid {
     grid-template-columns: 1fr;
   }
 
@@ -606,7 +701,8 @@ code {
 @media (max-width: 760px) {
   .detail-header,
   .section-heading,
-  .workspace-card-main {
+  .workspace-card-main,
+  .dashboard-card-header {
     flex-direction: column;
   }
 
@@ -614,7 +710,9 @@ code {
   .compact-button,
   .form-actions .danger-button,
   .topbar-actions,
-  .topbar-actions .secondary-button {
+  .topbar-actions .secondary-button,
+  .workspace-card-actions,
+  .workspace-card-actions .secondary-button {
     width: 100%;
   }
 }

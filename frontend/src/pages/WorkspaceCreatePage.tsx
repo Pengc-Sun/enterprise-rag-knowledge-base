@@ -69,13 +69,13 @@ export function WorkspaceCreatePage() {
     setIsCreating(true);
 
     try {
-      await createWorkspace({
+      const created = await createWorkspace({
         name: name.trim(),
         slug: slugify(slug),
         description: description.trim() || null,
         template_id: templateId || null,
       });
-      navigate('/workspaces');
+      navigate(`/workspaces/${created.id}`);
     } catch (err) {
       setCreateError(errorMessage(err, 'Failed to create workspace.'));
     } finally {

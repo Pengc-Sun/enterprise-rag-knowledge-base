@@ -6,7 +6,9 @@ import { KnowledgeBasesPage } from './pages/KnowledgeBasesPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { WorkspaceCreatePage } from './pages/WorkspaceCreatePage';
+import { WorkspaceDashboardPage } from './pages/WorkspaceDashboardPage';
 import { WorkspaceListPage } from './pages/WorkspaceListPage';
+import { WorkspacePlaceholderPage } from './pages/WorkspacePlaceholderPage';
 
 export function App() {
   return (
@@ -34,6 +36,22 @@ export function App() {
         element={
           <ProtectedRoute>
             <WorkspaceCreatePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId"
+        element={
+          <ProtectedRoute>
+            <WorkspaceDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/:section"
+        element={
+          <ProtectedRoute>
+            <WorkspacePlaceholderPage />
           </ProtectedRoute>
         }
       />
