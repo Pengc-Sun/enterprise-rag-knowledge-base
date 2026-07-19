@@ -64,6 +64,24 @@ class WorkspaceRead(WorkspaceBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WorkspaceDashboardStatusMetric(BaseModel):
+    total: int
+    by_status: dict[str, int] = Field(default_factory=dict)
+
+
+class WorkspaceDashboardReviewMetric(WorkspaceDashboardStatusMetric):
+    by_decision: dict[str, int] = Field(default_factory=dict)
+
+
+class WorkspaceDashboardRead(BaseModel):
+    workspace_id: uuid.UUID
+    documents: WorkspaceDashboardStatusMetric
+    analysis_tasks: WorkspaceDashboardStatusMetric
+    reviews: WorkspaceDashboardReviewMetric
+    reports: WorkspaceDashboardStatusMetric
+    exports: WorkspaceDashboardStatusMetric
+
+
 class WorkspaceMemberBase(BaseModel):
     user_id: uuid.UUID
     role: WorkspaceMemberRole = WorkspaceMemberRole.VIEWER

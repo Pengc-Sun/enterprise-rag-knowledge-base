@@ -232,6 +232,73 @@ GET /api/v1/workspaces/{workspace_id}
 
 Requires workspace membership. Missing or inaccessible workspaces return `404 not_found`.
 
+### Read workspace dashboard
+
+```text
+GET /api/v1/workspaces/{workspace_id}/dashboard
+```
+
+Requires workspace read access. Returns simple status-card metrics for the workspace:
+
+```json
+{
+  "workspace_id": "f196aa9b-32b9-4d37-9343-f7efe7182b42",
+  "documents": {
+    "total": 4,
+    "by_status": {
+      "uploaded": 0,
+      "parsing": 0,
+      "chunking": 0,
+      "embedding": 0,
+      "completed": 3,
+      "failed": 1
+    }
+  },
+  "analysis_tasks": {
+    "total": 2,
+    "by_status": {
+      "pending": 0,
+      "running": 0,
+      "completed": 2,
+      "failed": 0
+    }
+  },
+  "reviews": {
+    "total": 6,
+    "by_status": {
+      "ai_generated": 0,
+      "needs_review": 4,
+      "approved": 2,
+      "edited": 0,
+      "rejected": 0
+    },
+    "by_decision": {
+      "approve": 2,
+      "edit": 0,
+      "reject": 0,
+      "request_changes": 0
+    }
+  },
+  "reports": {
+    "total": 2,
+    "by_status": {
+      "draft": 1,
+      "ready": 0,
+      "exported": 1
+    }
+  },
+  "exports": {
+    "total": 2,
+    "by_status": {
+      "pending": 0,
+      "running": 0,
+      "completed": 2,
+      "failed": 0
+    }
+  }
+}
+```
+
 ### Update workspace
 
 ```text

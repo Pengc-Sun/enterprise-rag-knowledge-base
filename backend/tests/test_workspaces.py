@@ -20,6 +20,9 @@ from backend.app.models.workspace import (
 )
 from backend.app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDashboardRead,
+    WorkspaceDashboardReviewMetric,
+    WorkspaceDashboardStatusMetric,
     WorkspaceUpdate,
 )
 from backend.app.services.workspaces import WorkspaceMemberRoleError
@@ -197,6 +200,61 @@ def test_read_workspace(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["data"]["id"] == str(workspace.id)
+
+
+def test_read_workspace_dashboard_requires_read_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    dashboard = WorkspaceDashboardRead(
+        workspace_id=workspace.id,
+        documents=WorkspaceDashboardStatusMetric(total=2, by_status={"completed": 2}),
+        analysis_tasks=WorkspaceDashboardStatusMetric(total=1, by_status={"completed": 1}),
+        reviews=WorkspaceDashboardReviewMetric(
+            total=3,
+            by_status={"needs_review": 2, "approved": 1},
+            by_decision={"approve": 1},
+        ),
+        reports=WorkspaceDashboardStatusMetric(total=1, by_status={"draft": 1}),
+        exports=WorkspaceDashboardStatusMetric(total=1, by_status={"completed": 1}),
+    )
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert workspace_id == workspace.id
+        assert user_id == user.id
+        assert "viewer" in allowed_roles
+        return workspace
+
+    async def fake_build_workspace_dashboard(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+    ) -> WorkspaceDashboardRead:
+        assert workspace_id == workspace.id
+        return dashboard
+
+    monkeypatch.setattr(workspace_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(
+        workspace_endpoints,
+        "build_workspace_dashboard",
+        fake_build_workspace_dashboard,
+    )
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/v1/workspaces/{workspace.id}/dashboard")
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["workspace_id"] == str(workspace.id)
+    assert body["data"]["documents"]["total"] == 2
+    assert body["data"]["reviews"]["by_decision"]["approve"] == 1
 
 
 def test_update_workspace(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,6 +12,7 @@ from backend.app.models.workspace import Workspace, WorkspaceDirectory, Workspac
 from backend.app.schemas.response import APIResponse, success_response
 from backend.app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDashboardRead,
     WorkspaceDirectoryCreate,
     WorkspaceDirectoryRead,
     WorkspaceDirectoryUpdate,
@@ -23,6 +24,7 @@ from backend.app.schemas.workspace import (
 )
 from backend.app.services.audit_logs import create_audit_log
 from backend.app.services.users import get_user_by_id
+from backend.app.services.workspace_dashboard import build_workspace_dashboard
 from backend.app.services.workspace_directories import (
     WorkspaceDirectoryParentError,
     WorkspaceDirectorySelfParentError,
@@ -98,6 +100,17 @@ async def read_workspace_endpoint(
 ) -> APIResponse[WorkspaceRead]:
     workspace = await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
     return success_response(WorkspaceRead.model_validate(workspace))
+
+
+@router.get("/{workspace_id}/dashboard", response_model=APIResponse[WorkspaceDashboardRead])
+async def read_workspace_dashboard_endpoint(
+    workspace_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> APIResponse[WorkspaceDashboardRead]:
+    await get_workspace_or_404(session, workspace_id, current_user.id, READ_ROLES)
+    dashboard = await build_workspace_dashboard(session, workspace_id)
+    return success_response(dashboard)
 
 
 @router.patch("/{workspace_id}", response_model=APIResponse[WorkspaceRead])

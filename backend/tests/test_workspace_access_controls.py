@@ -772,6 +772,7 @@ def test_workspace_routes_are_registered_in_openapi() -> None:
     paths = client.get("/openapi.json").json()["paths"]
 
     assert "/api/v1/workspaces" in paths
+    assert "/api/v1/workspaces/{workspace_id}/dashboard" in paths
     assert "/api/v1/workspaces/{workspace_id}/directories" in paths
     assert "/api/v1/workspaces/{workspace_id}/members" in paths
     assert "/api/v1/workspace-templates" in paths

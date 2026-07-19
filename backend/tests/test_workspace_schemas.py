@@ -10,6 +10,9 @@ from backend.app.models.workspace import (
 )
 from backend.app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDashboardRead,
+    WorkspaceDashboardReviewMetric,
+    WorkspaceDashboardStatusMetric,
     WorkspaceDirectoryCreate,
     WorkspaceDirectoryUpdate,
     WorkspaceMemberCreate,
@@ -42,6 +45,26 @@ def test_workspace_update_accepts_status() -> None:
     update = WorkspaceUpdate(status=WorkspaceStatus.ARCHIVED)
 
     assert update.status == WorkspaceStatus.ARCHIVED
+
+
+def test_workspace_dashboard_read_accepts_metrics() -> None:
+    workspace_id = uuid.uuid4()
+
+    dashboard = WorkspaceDashboardRead(
+        workspace_id=workspace_id,
+        documents=WorkspaceDashboardStatusMetric(total=2, by_status={"completed": 2}),
+        analysis_tasks=WorkspaceDashboardStatusMetric(total=1, by_status={"pending": 1}),
+        reviews=WorkspaceDashboardReviewMetric(
+            total=3,
+            by_status={"needs_review": 2, "approved": 1},
+            by_decision={"approve": 1},
+        ),
+        reports=WorkspaceDashboardStatusMetric(total=1, by_status={"draft": 1}),
+        exports=WorkspaceDashboardStatusMetric(total=1, by_status={"completed": 1}),
+    )
+
+    assert dashboard.workspace_id == workspace_id
+    assert dashboard.reviews.by_decision["approve"] == 1
 
 
 def test_workspace_template_create_accepts_structured_schemas() -> None:

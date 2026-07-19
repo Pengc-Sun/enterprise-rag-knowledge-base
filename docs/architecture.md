@@ -95,6 +95,8 @@ Main entities:
 - `ExportJob`: workspace-scoped report export tracking row with format, status, optional file path,
   optional error message, creator, and metadata. Markdown, DOCX, and PDF exports are written to
   configured export storage and exposed through an access-controlled download endpoint.
+- `WorkspaceDashboard`: read-only service response that aggregates workspace document, analysis task,
+  review, report, and export counts for status-card UI.
 - `AuditLog`: workspace-scoped event record for key workspace, member, document, directory, and review actions. It stores actor/resource IDs without cascading foreign keys so deletion does not erase the audit trail.
 
 Important relationships:
