@@ -48,6 +48,38 @@ export function App() {
         }
       />
       <Route
+        path="/workspaces/:workspaceId/knowledge-bases"
+        element={
+          <ProtectedRoute>
+            <KnowledgeBasesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/knowledge-bases/:knowledgeBaseId"
+        element={
+          <ProtectedRoute>
+            <KnowledgeBasesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/knowledge-bases/:knowledgeBaseId/documents"
+        element={
+          <ProtectedRoute>
+            <DocumentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspaces/:workspaceId/knowledge-bases/:knowledgeBaseId/chat"
+        element={
+          <ProtectedRoute>
+            <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/workspaces/:workspaceId/:section"
         element={
           <ProtectedRoute>

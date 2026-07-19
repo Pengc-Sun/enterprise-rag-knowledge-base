@@ -4,6 +4,7 @@ import { ApiError } from '../api/client';
 import { deleteDocument, listDocuments, reprocessDocument, uploadDocument } from '../api/documents';
 import { getKnowledgeBase } from '../api/knowledgeBases';
 import type { DocumentItem, KnowledgeBase } from '../api/types';
+import { WorkspaceNav } from '../components/WorkspaceNav';
 
 function formatBytes(bytes: number) {
   if (bytes === 0) {
@@ -28,7 +29,7 @@ function errorMessage(err: unknown, fallback: string) {
 }
 
 export function DocumentsPage() {
-  const { knowledgeBaseId } = useParams();
+  const { workspaceId, knowledgeBaseId } = useParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -38,6 +39,8 @@ export function DocumentsPage() {
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const knowledgeBasesPath = workspaceId ? `/workspaces/${workspaceId}/knowledge-bases` : '/knowledge-bases';
+  const knowledgeBasePath = knowledgeBaseId ? `${knowledgeBasesPath}/${knowledgeBaseId}` : knowledgeBasesPath;
 
   const loadDocuments = useCallback(async () => {
     if (!knowledgeBaseId) {
@@ -49,8 +52,8 @@ export function DocumentsPage() {
 
     try {
       const [knowledgeBaseResponse, documentsResponse] = await Promise.all([
-        getKnowledgeBase(knowledgeBaseId),
-        listDocuments(knowledgeBaseId),
+        getKnowledgeBase(knowledgeBaseId, workspaceId),
+        listDocuments(knowledgeBaseId, workspaceId),
       ]);
       setKnowledgeBase(knowledgeBaseResponse);
       setDocuments(documentsResponse);
@@ -59,14 +62,14 @@ export function DocumentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [knowledgeBaseId]);
+  }, [knowledgeBaseId, workspaceId]);
 
   useEffect(() => {
     void loadDocuments();
   }, [loadDocuments]);
 
   if (!knowledgeBaseId) {
-    return <Navigate to="/knowledge-bases" replace />;
+    return <Navigate to={knowledgeBasesPath} replace />;
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
@@ -83,7 +86,7 @@ export function DocumentsPage() {
     setUploadError(null);
 
     try {
-      const uploaded = await uploadDocument(knowledgeBaseId, selectedFile);
+      const uploaded = await uploadDocument(knowledgeBaseId, selectedFile, workspaceId);
       setDocuments((current) => [uploaded, ...current]);
       setSelectedFile(null);
       if (fileInputRef.current) {
@@ -105,7 +108,7 @@ export function DocumentsPage() {
     setPageError(null);
 
     try {
-      const processed = await reprocessDocument(knowledgeBaseId, document.id);
+      const processed = await reprocessDocument(knowledgeBaseId, document.id, workspaceId);
       setDocuments((current) => current.map((item) => (item.id === processed.id ? processed : item)));
     } catch (err) {
       setPageError(errorMessage(err, 'Failed to reprocess document.'));
@@ -128,7 +131,7 @@ export function DocumentsPage() {
     setPageError(null);
 
     try {
-      await deleteDocument(knowledgeBaseId, document.id);
+      await deleteDocument(knowledgeBaseId, document.id, workspaceId);
       setDocuments((current) => current.filter((item) => item.id !== document.id));
     } catch (err) {
       setPageError(errorMessage(err, 'Failed to delete document.'));
@@ -144,10 +147,12 @@ export function DocumentsPage() {
           <p className="eyebrow">Documents</p>
           <h1>{knowledgeBase?.name ?? 'Document management'}</h1>
         </div>
-        <Link className="secondary-button nav-button" to={`/knowledge-bases/${knowledgeBaseId}`}>
+        <Link className="secondary-button nav-button" to={knowledgeBasePath}>
           Knowledge base
         </Link>
       </header>
+
+      {workspaceId && <WorkspaceNav workspaceId={workspaceId} />}
 
       {pageError && <p className="form-error" role="alert">{pageError}</p>}
 

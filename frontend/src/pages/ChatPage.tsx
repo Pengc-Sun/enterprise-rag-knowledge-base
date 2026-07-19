@@ -10,6 +10,7 @@ import {
 } from '../api/conversations';
 import { getKnowledgeBase } from '../api/knowledgeBases';
 import type { Conversation, ConversationMetadata, KnowledgeBase, Message, SourceCitation } from '../api/types';
+import { WorkspaceNav } from '../components/WorkspaceNav';
 
 type DraftMessage = Message & {
   isStreaming?: boolean;
@@ -58,7 +59,7 @@ function newDraftMessage(partial: Pick<DraftMessage, 'conversation_id' | 'role' 
 }
 
 export function ChatPage() {
-  const { knowledgeBaseId } = useParams();
+  const { workspaceId, knowledgeBaseId } = useParams();
   const abortRef = useRef<AbortController | null>(null);
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -71,6 +72,8 @@ export function ChatPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [selectedSource, setSelectedSource] = useState<SourceCitation | null>(null);
+  const knowledgeBasesPath = workspaceId ? `/workspaces/${workspaceId}/knowledge-bases` : '/knowledge-bases';
+  const knowledgeBasePath = knowledgeBaseId ? `${knowledgeBasesPath}/${knowledgeBaseId}` : knowledgeBasesPath;
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
@@ -87,8 +90,8 @@ export function ChatPage() {
 
     try {
       const [knowledgeBaseResponse, conversationsResponse] = await Promise.all([
-        getKnowledgeBase(knowledgeBaseId),
-        listConversations(knowledgeBaseId),
+        getKnowledgeBase(knowledgeBaseId, workspaceId),
+        listConversations(knowledgeBaseId, workspaceId),
       ]);
       setKnowledgeBase(knowledgeBaseResponse);
       setConversations(conversationsResponse);
@@ -98,7 +101,7 @@ export function ChatPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [knowledgeBaseId]);
+  }, [knowledgeBaseId, workspaceId]);
 
   useEffect(() => {
     void loadConversations();
@@ -117,7 +120,7 @@ export function ChatPage() {
     async function loadMessages() {
       setPageError(null);
       try {
-        const response = await listMessages(kbId, conversationId);
+        const response = await listMessages(kbId, conversationId, workspaceId);
         if (!cancelled) {
           setMessages(response);
         }
@@ -133,10 +136,10 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeConversationId, knowledgeBaseId]);
+  }, [activeConversationId, knowledgeBaseId, workspaceId]);
 
   if (!knowledgeBaseId) {
-    return <Navigate to="/knowledge-bases" replace />;
+    return <Navigate to={knowledgeBasesPath} replace />;
   }
 
   async function handleNewConversation() {
@@ -148,7 +151,7 @@ export function ChatPage() {
     setPageError(null);
 
     try {
-      const created = await createConversation(knowledgeBaseId, 'New conversation');
+      const created = await createConversation(knowledgeBaseId, 'New conversation', workspaceId);
       setConversations((current) => [created, ...current]);
       setActiveConversationId(created.id);
       setMessages([]);
@@ -169,7 +172,7 @@ export function ChatPage() {
     }
 
     try {
-      await deleteConversation(knowledgeBaseId, conversation.id);
+      await deleteConversation(knowledgeBaseId, conversation.id, workspaceId);
       setConversations((current) => current.filter((item) => item.id !== conversation.id));
       if (activeConversationId === conversation.id) {
         setActiveConversationId(null);
@@ -197,7 +200,7 @@ export function ChatPage() {
     let conversationId = activeConversationId;
     try {
       if (!conversationId) {
-        const created = await createConversation(knowledgeBaseId, trimmedQuestion.slice(0, 80));
+        const created = await createConversation(knowledgeBaseId, trimmedQuestion.slice(0, 80), workspaceId);
         setConversations((current) => [created, ...current]);
         setActiveConversationId(created.id);
         conversationId = created.id;
@@ -227,41 +230,48 @@ export function ChatPage() {
     abortRef.current = controller;
 
     try {
-      await streamConversationChat(knowledgeBaseId, conversationId, trimmedQuestion, controller.signal, {
-        onMetadata: (metadata) => {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantDraft.id ? { ...message, metadata } : message,
-            ),
-          );
+      await streamConversationChat(
+        knowledgeBaseId,
+        conversationId,
+        trimmedQuestion,
+        controller.signal,
+        {
+          onMetadata: (metadata) => {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantDraft.id ? { ...message, metadata } : message,
+              ),
+            );
+          },
+          onToken: (token) => {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantDraft.id
+                  ? { ...message, content: `${message.content}${token}` }
+                  : message,
+              ),
+            );
+          },
+          onDone: ({ sources, assistant_message_id }) => {
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantDraft.id
+                  ? {
+                      ...message,
+                      id: assistant_message_id || message.id,
+                      sources,
+                      isStreaming: false,
+                    }
+                  : message,
+              ),
+            );
+          },
+          onError: (message) => {
+            setStreamError(message);
+          },
         },
-        onToken: (token) => {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantDraft.id
-                ? { ...message, content: `${message.content}${token}` }
-                : message,
-            ),
-          );
-        },
-        onDone: ({ sources, assistant_message_id }) => {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantDraft.id
-                ? {
-                    ...message,
-                    id: assistant_message_id || message.id,
-                    sources,
-                    isStreaming: false,
-                  }
-                : message,
-            ),
-          );
-        },
-        onError: (message) => {
-          setStreamError(message);
-        },
-      });
+        workspaceId,
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         setStreamError('Generation stopped.');
@@ -272,13 +282,13 @@ export function ChatPage() {
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
-      await refreshActiveMessages(knowledgeBaseId, conversationId);
+      await refreshActiveMessages(knowledgeBaseId, conversationId, workspaceId);
     }
   }
 
-  async function refreshActiveMessages(kbId: string, conversationId: string) {
+  async function refreshActiveMessages(kbId: string, conversationId: string, wsId?: string) {
     try {
-      const response = await listMessages(kbId, conversationId);
+      const response = await listMessages(kbId, conversationId, wsId);
       setMessages(response);
     } catch {
       // Keep optimistic messages visible if history reload fails.
@@ -304,10 +314,12 @@ export function ChatPage() {
           <p className="eyebrow">Chat</p>
           <h1>{knowledgeBase?.name ?? 'Knowledge base chat'}</h1>
         </div>
-        <Link className="secondary-button nav-button" to={`/knowledge-bases/${knowledgeBaseId}`}>
+        <Link className="secondary-button nav-button" to={knowledgeBasePath}>
           Knowledge base
         </Link>
       </header>
+
+      {workspaceId && <WorkspaceNav workspaceId={workspaceId} />}
 
       {pageError && <p className="form-error" role="alert">{pageError}</p>}
 

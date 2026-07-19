@@ -1,8 +1,10 @@
 import { API_BASE_URL, ApiError, apiRequest, getStoredToken } from './client';
 import type { Conversation, ConversationMetadata, Message, SourceCitation } from './types';
 
-const conversationsPath = (knowledgeBaseId: string) =>
-  `/knowledge-bases/${knowledgeBaseId}/conversations`;
+const conversationsPath = (knowledgeBaseId: string, workspaceId?: string) =>
+  workspaceId
+    ? `/workspaces/${workspaceId}/knowledge-bases/${knowledgeBaseId}/conversations`
+    : `/knowledge-bases/${knowledgeBaseId}/conversations`;
 
 export type StreamChatHandlers = {
   onStart?: () => void;
@@ -17,28 +19,37 @@ type ParsedSseEvent = {
   data: Record<string, unknown>;
 };
 
-export function listConversations(knowledgeBaseId: string): Promise<Conversation[]> {
-  return apiRequest<Conversation[]>(conversationsPath(knowledgeBaseId));
+export function listConversations(knowledgeBaseId: string, workspaceId?: string): Promise<Conversation[]> {
+  return apiRequest<Conversation[]>(conversationsPath(knowledgeBaseId, workspaceId));
 }
 
 export function createConversation(
   knowledgeBaseId: string,
   title = 'New conversation',
+  workspaceId?: string,
 ): Promise<Conversation> {
-  return apiRequest<Conversation>(conversationsPath(knowledgeBaseId), {
+  return apiRequest<Conversation>(conversationsPath(knowledgeBaseId, workspaceId), {
     method: 'POST',
     body: JSON.stringify({ title }),
   });
 }
 
-export function deleteConversation(knowledgeBaseId: string, conversationId: string): Promise<void> {
-  return apiRequest<void>(`${conversationsPath(knowledgeBaseId)}/${conversationId}`, {
+export function deleteConversation(
+  knowledgeBaseId: string,
+  conversationId: string,
+  workspaceId?: string,
+): Promise<void> {
+  return apiRequest<void>(`${conversationsPath(knowledgeBaseId, workspaceId)}/${conversationId}`, {
     method: 'DELETE',
   });
 }
 
-export function listMessages(knowledgeBaseId: string, conversationId: string): Promise<Message[]> {
-  return apiRequest<Message[]>(`${conversationsPath(knowledgeBaseId)}/${conversationId}/messages`);
+export function listMessages(
+  knowledgeBaseId: string,
+  conversationId: string,
+  workspaceId?: string,
+): Promise<Message[]> {
+  return apiRequest<Message[]>(`${conversationsPath(knowledgeBaseId, workspaceId)}/${conversationId}/messages`);
 }
 
 export async function streamConversationChat(
@@ -47,6 +58,7 @@ export async function streamConversationChat(
   question: string,
   signal: AbortSignal,
   handlers: StreamChatHandlers,
+  workspaceId?: string,
 ): Promise<void> {
   const headers = new Headers({
     Accept: 'text/event-stream',
@@ -58,7 +70,7 @@ export async function streamConversationChat(
   }
 
   const response = await fetch(
-    `${API_BASE_URL}${conversationsPath(knowledgeBaseId)}/${conversationId}/chat/stream`,
+    `${API_BASE_URL}${conversationsPath(knowledgeBaseId, workspaceId)}/${conversationId}/chat/stream`,
     {
       method: 'POST',
       headers,

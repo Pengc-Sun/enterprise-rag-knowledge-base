@@ -9,6 +9,7 @@ import {
   updateKnowledgeBase,
 } from '../api/knowledgeBases';
 import type { KnowledgeBase, KnowledgeBaseVisibility } from '../api/types';
+import { WorkspaceNav } from '../components/WorkspaceNav';
 
 const visibilityOptions: KnowledgeBaseVisibility[] = ['private', 'public'];
 
@@ -25,7 +26,7 @@ function errorMessage(err: unknown, fallback: string) {
 
 export function KnowledgeBasesPage() {
   const navigate = useNavigate();
-  const { knowledgeBaseId } = useParams();
+  const { workspaceId, knowledgeBaseId } = useParams();
   const [items, setItems] = useState<KnowledgeBase[]>([]);
   const [selected, setSelected] = useState<KnowledgeBase | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,20 +46,26 @@ export function KnowledgeBasesPage() {
     () => items.find((item) => item.id === knowledgeBaseId) ?? null,
     [items, knowledgeBaseId],
   );
+  const knowledgeBasesPath = workspaceId ? `/workspaces/${workspaceId}/knowledge-bases` : '/knowledge-bases';
+  const workspacePath = workspaceId ? `/workspaces/${workspaceId}` : '/';
+  const knowledgeBasePath = useCallback(
+    (id: string) => `${knowledgeBasesPath}/${id}`,
+    [knowledgeBasesPath],
+  );
 
   const loadKnowledgeBases = useCallback(async () => {
     setIsLoading(true);
     setListError(null);
 
     try {
-      const response = await listKnowledgeBases();
+      const response = await listKnowledgeBases(workspaceId);
       setItems(response);
     } catch (err) {
       setListError(errorMessage(err, 'Failed to load knowledge bases.'));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [workspaceId]);
 
   useEffect(() => {
     void loadKnowledgeBases();
@@ -79,7 +86,7 @@ export function KnowledgeBasesPage() {
       }
 
       try {
-        const response = await getKnowledgeBase(knowledgeBaseId);
+        const response = await getKnowledgeBase(knowledgeBaseId, workspaceId);
         if (!cancelled) {
           setSelected(response);
         }
@@ -96,7 +103,7 @@ export function KnowledgeBasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [knowledgeBaseId, selectedFromList]);
+  }, [knowledgeBaseId, selectedFromList, workspaceId]);
 
   useEffect(() => {
     if (!selected) {
@@ -121,12 +128,12 @@ export function KnowledgeBasesPage() {
         name: createName.trim(),
         description: createDescription.trim() || null,
         visibility: createVisibility,
-      });
+      }, workspaceId);
       setItems((current) => [created, ...current]);
       setCreateName('');
       setCreateDescription('');
       setCreateVisibility('private');
-      navigate(`/knowledge-bases/${created.id}`);
+      navigate(knowledgeBasePath(created.id));
     } catch (err) {
       setCreateError(errorMessage(err, 'Failed to create knowledge base.'));
     } finally {
@@ -148,7 +155,7 @@ export function KnowledgeBasesPage() {
         name: editName.trim(),
         description: editDescription.trim() || null,
         visibility: editVisibility,
-      });
+      }, workspaceId);
       setSelected(updated);
       setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (err) {
@@ -172,10 +179,10 @@ export function KnowledgeBasesPage() {
     setIsDeleting(true);
 
     try {
-      await deleteKnowledgeBase(selected.id);
+      await deleteKnowledgeBase(selected.id, workspaceId);
       setItems((current) => current.filter((item) => item.id !== selected.id));
       setSelected(null);
-      navigate('/knowledge-bases', { replace: true });
+      navigate(knowledgeBasesPath, { replace: true });
     } catch (err) {
       setDetailError(errorMessage(err, 'Failed to delete knowledge base.'));
     } finally {
@@ -190,10 +197,12 @@ export function KnowledgeBasesPage() {
           <p className="eyebrow">Knowledge bases</p>
           <h1>Corpus management</h1>
         </div>
-        <Link className="secondary-button nav-button" to="/">
+        <Link className="secondary-button nav-button" to={workspacePath}>
           Workspace
         </Link>
       </header>
+
+      {workspaceId && <WorkspaceNav workspaceId={workspaceId} />}
 
       {listError && <p className="form-error" role="alert">{listError}</p>}
 
@@ -219,7 +228,7 @@ export function KnowledgeBasesPage() {
                 <Link
                   className={item.id === selected?.id ? 'kb-list-item active' : 'kb-list-item'}
                   key={item.id}
-                  to={`/knowledge-bases/${item.id}`}
+                  to={knowledgeBasePath(item.id)}
                 >
                   <strong>{item.name}</strong>
                   <span>{item.description || 'No description'}</span>
@@ -303,10 +312,10 @@ export function KnowledgeBasesPage() {
                   <button className="primary-button inline-button" disabled={isSaving} type="submit">
                     {isSaving ? 'Saving...' : 'Save changes'}
                   </button>
-                  <Link className="secondary-button nav-button" to={`/knowledge-bases/${selected.id}/documents`}>
+                  <Link className="secondary-button nav-button" to={`${knowledgeBasePath(selected.id)}/documents`}>
                     Manage documents
                   </Link>
-                  <Link className="secondary-button nav-button" to={`/knowledge-bases/${selected.id}/chat`}>
+                  <Link className="secondary-button nav-button" to={`${knowledgeBasePath(selected.id)}/chat`}>
                     Open chat
                   </Link>
                   <button
