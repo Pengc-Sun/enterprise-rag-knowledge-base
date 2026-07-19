@@ -1,7 +1,10 @@
 import uuid
+from base64 import b64encode
 from collections.abc import Iterable
+from io import BytesIO
 from json import dumps
 
+from docx import Document as DocxDocument
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -177,23 +180,20 @@ async def create_report_export(
     created_by: uuid.UUID,
     export_create: ReportExportCreate,
 ) -> ExportJob:
-    if export_create.format != ExportFormat.MARKDOWN:
-        raise ReportExportError("Only markdown export is supported")
+    if export_create.format not in {ExportFormat.MARKDOWN, ExportFormat.DOCX}:
+        raise ReportExportError("Only markdown and docx export are supported")
 
     preview = await build_report_preview(session, workspace_id, report)
+    export_metadata = build_export_metadata(export_create.format, preview)
     export_job = ExportJob(
         workspace_id=workspace_id,
         report_id=report.id,
-        format=ExportFormat.MARKDOWN.value,
+        format=export_create.format.value,
         status=ExportJobStatus.COMPLETED.value,
         file_path=None,
         error_message=None,
         created_by=created_by,
-        export_metadata={
-            "markdown": preview.markdown,
-            "title": preview.title,
-            "section_count": preview.section_count,
-        },
+        export_metadata=export_metadata,
     )
     report.status = ReportStatus.EXPORTED.value
     session.add(export_job)
@@ -201,6 +201,50 @@ async def create_report_export(
     await session.refresh(export_job)
     await session.refresh(report)
     return export_job
+
+
+def build_export_metadata(
+    export_format: ExportFormat,
+    preview: ReportPreviewRead,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "title": preview.title,
+        "section_count": preview.section_count,
+    }
+    if export_format == ExportFormat.MARKDOWN:
+        metadata["markdown"] = preview.markdown
+        return metadata
+    if export_format == ExportFormat.DOCX:
+        docx_bytes = render_report_docx(preview)
+        metadata["docx_base64"] = b64encode(docx_bytes).decode("ascii")
+        metadata["content_type"] = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        metadata["filename"] = f"{_export_filename_stem(preview.title)}.docx"
+        return metadata
+    raise ReportExportError("Unsupported export format")
+
+
+def render_report_docx(preview: ReportPreviewRead) -> bytes:
+    document = DocxDocument()
+    document.add_heading(preview.title, level=1)
+
+    for line in preview.markdown.splitlines()[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("## "):
+            document.add_heading(stripped.removeprefix("## ").strip(), level=2)
+        elif stripped.startswith("### "):
+            document.add_heading(stripped.removeprefix("### ").strip(), level=3)
+        elif stripped.startswith("- "):
+            document.add_paragraph(stripped.removeprefix("- ").strip(), style="List Bullet")
+        else:
+            document.add_paragraph(stripped)
+
+    output = BytesIO()
+    document.save(output)
+    return output.getvalue()
 
 
 async def create_report_section(
@@ -476,3 +520,9 @@ def _collect_source_task_keys(tasks: Iterable[AnalysisTask]) -> list[str]:
 
 def _markdown_heading_text(value: str) -> str:
     return " ".join(value.split()).strip() or "Untitled"
+
+
+def _export_filename_stem(value: str) -> str:
+    slug = "".join(character.lower() if character.isalnum() else "-" for character in value)
+    compact_slug = "-".join(part for part in slug.split("-") if part)
+    return compact_slug[:120] or "report"

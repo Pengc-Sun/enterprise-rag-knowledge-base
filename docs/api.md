@@ -829,15 +829,16 @@ Response data:
 POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/exports
 ```
 
-Requires workspace owner or admin. Day 50 supports `markdown` export jobs. The export job is marked
-`completed` immediately and stores the rendered Markdown in export metadata. DOCX, PDF, file storage,
-and download URLs are added by later export workflow days.
+Requires workspace owner or admin. Markdown and DOCX export jobs are marked `completed`
+immediately. Markdown exports store rendered Markdown in export metadata. DOCX exports store a base64
+encoded `.docx` payload in export metadata. PDF, file storage, and download URLs are added by later
+export workflow days.
 
 Request body:
 
 ```json
 {
-  "format": "markdown"
+  "format": "docx"
 }
 ```
 
@@ -858,6 +859,18 @@ Response data:
     "section_count": 2,
     "markdown": "# Policy Review Report\n\n## Policy Requirements\n\n..."
   }
+}
+```
+
+For DOCX exports, `export_metadata` includes:
+
+```json
+{
+  "title": "Policy Review Report",
+  "section_count": 2,
+  "filename": "policy-review-report.docx",
+  "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "docx_base64": "UEsDB..."
 }
 ```
 

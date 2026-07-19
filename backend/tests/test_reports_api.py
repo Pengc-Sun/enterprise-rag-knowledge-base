@@ -99,13 +99,14 @@ def make_export_job(
     workspace_id: uuid.UUID,
     report_id: uuid.UUID,
     created_by: uuid.UUID,
+    export_format: ExportFormat = ExportFormat.MARKDOWN,
 ) -> ExportJob:
     now = datetime.now(UTC)
     return ExportJob(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         report_id=report_id,
-        format=ExportFormat.MARKDOWN.value,
+        format=export_format.value,
         status=ExportJobStatus.COMPLETED.value,
         file_path=None,
         error_message=None,
@@ -478,6 +479,67 @@ def test_create_report_export_returns_completed_markdown_job(
     assert body["data"]["export_metadata"]["markdown"] == "# Policy Review Report\n"
 
 
+def test_create_report_export_returns_completed_docx_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = make_user()
+    workspace = make_workspace(user.id)
+    report = make_report(workspace.id, user.id)
+    export_job = make_export_job(workspace.id, report.id, user.id, ExportFormat.DOCX)
+    export_job.export_metadata = {
+        "docx_base64": "UEsDBAo=",
+        "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "filename": "policy-review-report.docx",
+        "section_count": 1,
+    }
+
+    async def fake_get_workspace_for_user(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        allowed_roles: frozenset[str],
+    ) -> Workspace:
+        assert allowed_roles == WRITE_ROLES
+        return workspace
+
+    async def fake_get_report_for_workspace(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> Report:
+        return report
+
+    async def fake_create_report_export(
+        session: AsyncSession,
+        workspace_id: uuid.UUID,
+        report: Report,
+        created_by: uuid.UUID,
+        export_create: ReportExportCreate,
+    ) -> ExportJob:
+        assert export_create.format == ExportFormat.DOCX
+        return export_job
+
+    monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
+    monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
+    monkeypatch.setattr(report_endpoints, "create_report_export", fake_create_report_export)
+    set_overrides(user)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/api/v1/workspaces/{workspace.id}/reports/{report.id}/exports",
+            json={"format": "docx"},
+        )
+    finally:
+        clear_overrides()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["data"]["format"] == "docx"
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["export_metadata"]["filename"] == "policy-review-report.docx"
+
+
 def test_create_report_export_returns_400_for_unsupported_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -507,7 +569,7 @@ def test_create_report_export_returns_400_for_unsupported_format(
         created_by: uuid.UUID,
         export_create: ReportExportCreate,
     ) -> ExportJob:
-        raise ReportExportError("Only markdown export is supported")
+        raise ReportExportError("Only markdown and docx export are supported")
 
     monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
     monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
@@ -524,7 +586,7 @@ def test_create_report_export_returns_400_for_unsupported_format(
         clear_overrides()
 
     assert response.status_code == 400
-    assert response.json()["message"] == "Only markdown export is supported"
+    assert response.json()["message"] == "Only markdown and docx export are supported"
 
 
 def test_read_export_job_returns_workspace_export_status(

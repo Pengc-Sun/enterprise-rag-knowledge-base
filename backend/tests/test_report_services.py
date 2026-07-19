@@ -1,4 +1,5 @@
 import uuid
+from base64 import b64decode
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +17,7 @@ from backend.app.models.report import (
 from backend.app.schemas.report import (
     ReportCreate,
     ReportExportCreate,
+    ReportPreviewRead,
     ReportSectionCreate,
     ReportSectionGenerateRequest,
     ReportSectionOrderItem,
@@ -38,6 +40,7 @@ from backend.app.services.reports import (
     get_report_section_for_report,
     list_report_sections_for_report,
     list_reports_for_workspace,
+    render_report_docx,
     render_report_preview_markdown,
     reorder_report_sections,
     update_report,
@@ -358,6 +361,37 @@ async def test_create_report_export_persists_completed_markdown_job() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_report_export_persists_completed_docx_job() -> None:
+    workspace_id = uuid.uuid4()
+    report = make_report(workspace_id)
+    created_by = uuid.uuid4()
+    section = make_section(workspace_id, report.id)
+    section.title = "Executive Summary"
+    section.body_markdown = "Approved summary."
+    session = FakeSession([FakeResult(items=[section])])
+
+    export_job = await create_report_export(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report,
+        created_by,
+        ReportExportCreate(format=ExportFormat.DOCX),
+    )
+
+    assert export_job.format == ExportFormat.DOCX.value
+    assert export_job.status == ExportJobStatus.COMPLETED.value
+    assert export_job.export_metadata["content_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert export_job.export_metadata["filename"] == "policy-review-report.docx"
+    docx_bytes = b64decode(str(export_job.export_metadata["docx_base64"]))
+    assert docx_bytes.startswith(b"PK")
+    assert report.status == ReportStatus.EXPORTED.value
+    assert session.added is export_job
+    assert session.committed is True
+
+
+@pytest.mark.asyncio
 async def test_create_report_export_rejects_non_markdown_format() -> None:
     workspace_id = uuid.uuid4()
     report = make_report(workspace_id)
@@ -374,6 +408,22 @@ async def test_create_report_export_rejects_non_markdown_format() -> None:
 
     assert session.added is None
     assert session.committed is False
+
+
+def test_render_report_docx_returns_docx_bytes() -> None:
+    preview = ReportPreviewRead(
+        report_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        title="Policy Review Report",
+        status=ReportStatus.DRAFT,
+        section_count=1,
+        markdown="# Policy Review Report\n\n## Executive Summary\n\nApproved summary.\n",
+    )
+
+    docx_bytes = render_report_docx(preview)
+
+    assert docx_bytes.startswith(b"PK")
+    assert len(docx_bytes) > 1000
 
 
 def test_render_report_preview_markdown_handles_empty_sections() -> None:
