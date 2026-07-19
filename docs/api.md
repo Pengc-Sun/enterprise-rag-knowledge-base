@@ -829,16 +829,16 @@ Response data:
 POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/exports
 ```
 
-Requires workspace owner or admin. Markdown and DOCX export jobs are marked `completed`
-immediately. Markdown exports store rendered Markdown in export metadata. DOCX exports store a base64
-encoded `.docx` payload in export metadata. PDF, file storage, and download URLs are added by later
-export workflow days.
+Requires workspace owner or admin. Markdown, DOCX, and PDF export jobs are marked `completed`
+immediately. Markdown exports store rendered Markdown in export metadata. DOCX and PDF exports store
+base64 encoded file payloads in export metadata. File storage paths and download URLs are added by
+later export workflow days.
 
 Request body:
 
 ```json
 {
-  "format": "docx"
+  "format": "pdf"
 }
 ```
 
@@ -871,6 +871,18 @@ For DOCX exports, `export_metadata` includes:
   "filename": "policy-review-report.docx",
   "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "docx_base64": "UEsDB..."
+}
+```
+
+For PDF exports, `export_metadata` includes:
+
+```json
+{
+  "title": "Policy Review Report",
+  "section_count": 2,
+  "filename": "policy-review-report.pdf",
+  "content_type": "application/pdf",
+  "pdf_base64": "JVBERi0..."
 }
 ```
 

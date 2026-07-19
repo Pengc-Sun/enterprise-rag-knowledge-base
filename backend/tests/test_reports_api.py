@@ -30,7 +30,6 @@ from backend.app.schemas.report import (
     ReportUpdate,
 )
 from backend.app.services.reports import (
-    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
@@ -540,12 +539,19 @@ def test_create_report_export_returns_completed_docx_job(
     assert body["data"]["export_metadata"]["filename"] == "policy-review-report.docx"
 
 
-def test_create_report_export_returns_400_for_unsupported_format(
+def test_create_report_export_returns_completed_pdf_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = make_user()
     workspace = make_workspace(user.id)
     report = make_report(workspace.id, user.id)
+    export_job = make_export_job(workspace.id, report.id, user.id, ExportFormat.PDF)
+    export_job.export_metadata = {
+        "pdf_base64": "JVBERi0=",
+        "content_type": "application/pdf",
+        "filename": "policy-review-report.pdf",
+        "section_count": 1,
+    }
 
     async def fake_get_workspace_for_user(
         session: AsyncSession,
@@ -569,7 +575,8 @@ def test_create_report_export_returns_400_for_unsupported_format(
         created_by: uuid.UUID,
         export_create: ReportExportCreate,
     ) -> ExportJob:
-        raise ReportExportError("Only markdown and docx export are supported")
+        assert export_create.format == ExportFormat.PDF
+        return export_job
 
     monkeypatch.setattr(report_endpoints, "get_workspace_for_user", fake_get_workspace_for_user)
     monkeypatch.setattr(report_endpoints, "get_report_for_workspace", fake_get_report_for_workspace)
@@ -585,8 +592,11 @@ def test_create_report_export_returns_400_for_unsupported_format(
     finally:
         clear_overrides()
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "Only markdown and docx export are supported"
+    assert response.status_code == 201
+    body = response.json()
+    assert body["data"]["format"] == "pdf"
+    assert body["data"]["status"] == "completed"
+    assert body["data"]["export_metadata"]["filename"] == "policy-review-report.pdf"
 
 
 def test_read_export_job_returns_workspace_export_status(

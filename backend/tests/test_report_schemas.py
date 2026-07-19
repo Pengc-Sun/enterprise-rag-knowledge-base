@@ -95,6 +95,12 @@ def test_report_export_create_accepts_docx() -> None:
     assert payload.format == ExportFormat.DOCX
 
 
+def test_report_export_create_accepts_pdf() -> None:
+    payload = ReportExportCreate(format=ExportFormat.PDF)
+
+    assert payload.format == ExportFormat.PDF
+
+
 def test_report_export_read_serializes_model() -> None:
     now = datetime.now(UTC)
     export_job = ExportJob(

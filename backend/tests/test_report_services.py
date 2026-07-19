@@ -26,7 +26,6 @@ from backend.app.schemas.report import (
     ReportUpdate,
 )
 from backend.app.services.reports import (
-    ReportExportError,
     ReportSectionGenerationError,
     ReportSectionOrderingError,
     ReportSectionSourceError,
@@ -41,6 +40,7 @@ from backend.app.services.reports import (
     list_report_sections_for_report,
     list_reports_for_workspace,
     render_report_docx,
+    render_report_pdf,
     render_report_preview_markdown,
     reorder_report_sections,
     update_report,
@@ -392,22 +392,32 @@ async def test_create_report_export_persists_completed_docx_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_report_export_rejects_non_markdown_format() -> None:
+async def test_create_report_export_persists_completed_pdf_job() -> None:
     workspace_id = uuid.uuid4()
     report = make_report(workspace_id)
-    session = FakeSession()
+    created_by = uuid.uuid4()
+    section = make_section(workspace_id, report.id)
+    section.title = "Executive Summary"
+    section.body_markdown = "Approved summary."
+    session = FakeSession([FakeResult(items=[section])])
 
-    with pytest.raises(ReportExportError):
-        await create_report_export(
-            session,  # type: ignore[arg-type]
-            workspace_id,
-            report,
-            uuid.uuid4(),
-            ReportExportCreate(format=ExportFormat.PDF),
-        )
+    export_job = await create_report_export(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        report,
+        created_by,
+        ReportExportCreate(format=ExportFormat.PDF),
+    )
 
-    assert session.added is None
-    assert session.committed is False
+    assert export_job.format == ExportFormat.PDF.value
+    assert export_job.status == ExportJobStatus.COMPLETED.value
+    assert export_job.export_metadata["content_type"] == "application/pdf"
+    assert export_job.export_metadata["filename"] == "policy-review-report.pdf"
+    pdf_bytes = b64decode(str(export_job.export_metadata["pdf_base64"]))
+    assert pdf_bytes.startswith(b"%PDF")
+    assert report.status == ReportStatus.EXPORTED.value
+    assert session.added is export_job
+    assert session.committed is True
 
 
 def test_render_report_docx_returns_docx_bytes() -> None:
@@ -424,6 +434,22 @@ def test_render_report_docx_returns_docx_bytes() -> None:
 
     assert docx_bytes.startswith(b"PK")
     assert len(docx_bytes) > 1000
+
+
+def test_render_report_pdf_returns_pdf_bytes() -> None:
+    preview = ReportPreviewRead(
+        report_id=uuid.uuid4(),
+        workspace_id=uuid.uuid4(),
+        title="Policy Review Report",
+        status=ReportStatus.DRAFT,
+        section_count=1,
+        markdown="# Policy Review Report\n\n## Executive Summary\n\nApproved summary.\n",
+    )
+
+    pdf_bytes = render_report_pdf(preview)
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 1000
 
 
 def test_render_report_preview_markdown_handles_empty_sections() -> None:

@@ -5,6 +5,9 @@ from io import BytesIO
 from json import dumps
 
 from docx import Document as DocxDocument
+from reportlab.lib.pagesizes import LETTER  # type: ignore[import-untyped]
+from reportlab.lib.units import inch  # type: ignore[import-untyped]
+from reportlab.pdfgen.canvas import Canvas  # type: ignore[import-untyped]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -180,8 +183,12 @@ async def create_report_export(
     created_by: uuid.UUID,
     export_create: ReportExportCreate,
 ) -> ExportJob:
-    if export_create.format not in {ExportFormat.MARKDOWN, ExportFormat.DOCX}:
-        raise ReportExportError("Only markdown and docx export are supported")
+    if export_create.format not in {
+        ExportFormat.MARKDOWN,
+        ExportFormat.DOCX,
+        ExportFormat.PDF,
+    }:
+        raise ReportExportError("Only markdown, docx, and pdf export are supported")
 
     preview = await build_report_preview(session, workspace_id, report)
     export_metadata = build_export_metadata(export_create.format, preview)
@@ -222,6 +229,12 @@ def build_export_metadata(
         )
         metadata["filename"] = f"{_export_filename_stem(preview.title)}.docx"
         return metadata
+    if export_format == ExportFormat.PDF:
+        pdf_bytes = render_report_pdf(preview)
+        metadata["pdf_base64"] = b64encode(pdf_bytes).decode("ascii")
+        metadata["content_type"] = "application/pdf"
+        metadata["filename"] = f"{_export_filename_stem(preview.title)}.pdf"
+        return metadata
     raise ReportExportError("Unsupported export format")
 
 
@@ -244,6 +257,70 @@ def render_report_docx(preview: ReportPreviewRead) -> bytes:
 
     output = BytesIO()
     document.save(output)
+    return output.getvalue()
+
+
+def render_report_pdf(preview: ReportPreviewRead) -> bytes:
+    output = BytesIO()
+    canvas = Canvas(output, pagesize=LETTER)
+    page_width, page_height = LETTER
+    margin = 0.75 * inch
+    max_width = page_width - (2 * margin)
+    y = page_height - margin
+
+    def draw_wrapped(
+        text: str,
+        *,
+        font_name: str,
+        font_size: int,
+        line_height: int,
+        indent: float = 0,
+    ) -> None:
+        nonlocal y
+        canvas.setFont(font_name, font_size)
+        for wrapped_line in _wrap_pdf_text(canvas, text, max_width - indent, font_name, font_size):
+            if y < margin:
+                canvas.showPage()
+                canvas.setFont(font_name, font_size)
+                y = page_height - margin
+            canvas.drawString(margin + indent, y, wrapped_line)
+            y -= line_height
+
+    draw_wrapped(preview.title, font_name="Helvetica-Bold", font_size=18, line_height=24)
+    y -= 8
+
+    for line in preview.markdown.splitlines()[1:]:
+        stripped = line.strip()
+        if not stripped:
+            y -= 8
+            continue
+        if stripped.startswith("## "):
+            y -= 4
+            draw_wrapped(
+                stripped.removeprefix("## ").strip(),
+                font_name="Helvetica-Bold",
+                font_size=14,
+                line_height=19,
+            )
+        elif stripped.startswith("### "):
+            draw_wrapped(
+                stripped.removeprefix("### ").strip(),
+                font_name="Helvetica-Bold",
+                font_size=12,
+                line_height=17,
+            )
+        elif stripped.startswith("- "):
+            draw_wrapped(
+                f"- {stripped.removeprefix('- ').strip()}",
+                font_name="Helvetica",
+                font_size=11,
+                line_height=15,
+                indent=14,
+            )
+        else:
+            draw_wrapped(stripped, font_name="Helvetica", font_size=11, line_height=15)
+
+    canvas.save()
     return output.getvalue()
 
 
@@ -526,3 +603,28 @@ def _export_filename_stem(value: str) -> str:
     slug = "".join(character.lower() if character.isalnum() else "-" for character in value)
     compact_slug = "-".join(part for part in slug.split("-") if part)
     return compact_slug[:120] or "report"
+
+
+def _wrap_pdf_text(
+    canvas: Canvas,
+    text: str,
+    max_width: float,
+    font_name: str,
+    font_size: int,
+) -> list[str]:
+    words = text.split()
+    if not words:
+        return [""]
+
+    lines: list[str] = []
+    current_line = words[0]
+    for word in words[1:]:
+        candidate = f"{current_line} {word}"
+        if canvas.stringWidth(candidate, font_name, font_size) <= max_width:
+            current_line = candidate
+        else:
+            lines.append(current_line)
+            current_line = word
+
+    lines.append(current_line)
+    return lines
