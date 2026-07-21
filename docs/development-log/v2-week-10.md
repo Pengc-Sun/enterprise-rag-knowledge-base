@@ -97,3 +97,47 @@ curl -fsS http://127.0.0.1:18080/api/v1/health
   `enterprise-rag-v2-day65-fresh` and port `18080` so it does not touch local development data.
 - The isolated stack should be removed after verification with `docker compose down -v` using the
   same project name.
+
+## Day 66 - Docker Upgrade From a v1.0 Database Snapshot
+
+### Completed
+
+- Added a repeatable Docker upgrade validation script for the v1.0-to-v2.0 database path.
+- The script creates an isolated production Compose project, upgrades the database only to the
+  v1.0 schema revision, seeds v1-style users, knowledge base, member, document, chunk,
+  conversation, and message rows, then runs the current production `migrate` service.
+- Verified the production migrate service upgrades the seeded v1 database from revision `0010` to
+  revision `0024`.
+- Verified the upgraded application can start backend and frontend services against the migrated
+  database.
+- Verified seeded v1 data is preserved and workspace backfill is complete.
+- Added unit tests for the Docker upgrade validation script and its result checks.
+
+### Verification Results
+
+```bash
+.venv/bin/python scripts/validate_docker_v1_upgrade.py --yes --json
+```
+
+- Seed revision: `0010`.
+- Final Alembic revision: `0024`.
+- Seeded users preserved: `2`.
+- Seeded knowledge bases preserved: `1`.
+- Seeded knowledge-base members preserved: `1`.
+- Seeded documents preserved: `1`.
+- Seeded document chunks preserved: `1`.
+- Seeded conversations preserved: `1`.
+- Seeded messages preserved: `1`.
+- Seeded workspace templates after upgrade: `4`.
+- Default workspace slug: `v1-default-24000000000040008000000000000001`.
+- Workspace owner member role: `owner`.
+- Migrated knowledge base, document, chunk, and conversation share the same workspace ID.
+- Null `workspace_id` counts after upgrade are zero for knowledge bases, documents, chunks, and
+  conversations.
+- Backend and frontend services reached healthy status after the upgrade.
+
+### Notes
+
+- The validation uses the isolated Compose project
+  `enterprise-rag-v2-docker-upgrade-validation` and frontend port `18081`.
+- The script removes its isolated containers and volumes by default after validation.
