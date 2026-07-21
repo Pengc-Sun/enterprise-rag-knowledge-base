@@ -203,3 +203,26 @@ rg -n "later report workflow|Week 4 through Week 8|Week 4 through Week 9" \
 
 - SVG syntax validation passed.
 - No stale report workflow wording or old README week-summary wording remained in product docs.
+
+## Day 69 - Changelog and v2.0.0 Release Notes
+
+### Completed
+
+- Added the `2.0.0` changelog entry with workspace, template, migration, isolation, analysis,
+  review, report, export, frontend, Docker validation, and known-limitations coverage.
+- Created `docs/release-v2.0.0.md` with release summary, highlights, verification matrix, Docker
+  validation snapshot, GitHub Release body, pre-tag version bump reminder, tagging commands,
+  repository topics, and release checklist.
+- Added the v2.0.0 release notes to the README detailed-documentation index.
+- Kept package/frontend/OpenAPI version bumping as a Day 70 pre-tag checklist item so the final tag
+  can be created after one last validation pass.
+
+### Verification Results
+
+```bash
+rg -n "v2.0.0|2.0.0|release-v2.0.0" CHANGELOG.md docs/release-v2.0.0.md README.md
+```
+
+- Changelog includes a `2.0.0` section dated `2026-07-21`.
+- Release notes include the final verification matrix and GitHub Release body.
+- README links to `docs/release-v2.0.0.md`.

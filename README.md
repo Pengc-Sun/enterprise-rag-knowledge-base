@@ -119,8 +119,9 @@ docker-compose.prod.yml  Production-style Docker Compose stack
 - `docs/demo-data/`: synthetic Markdown documents for the Day 54 local demo flow.
 - `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display, including v2 workspace workflow documentation assets.
 - `docs/demo-video.md`: 2-3 minute demonstration script, recording flow, narration, and checklist.
-- `CHANGELOG.md`: v1.0.0 changelog and verification summary.
+- `CHANGELOG.md`: v1.0.0 and v2.0.0 changelog and verification summary.
 - `docs/release-v1.0.0.md`: GitHub release notes, tag commands, topics, and release checklist.
+- `docs/release-v2.0.0.md`: v2.0.0 release notes, verification matrix, tag commands, topics, and release checklist.
 - `docs/cv-entry.md`: resume bullets, project summary, and interview talking points.
 
 ## Quick Start
