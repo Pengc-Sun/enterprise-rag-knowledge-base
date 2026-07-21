@@ -567,6 +567,7 @@ async def _get_reportable_analysis_result_rows(
         .join(AnalysisTask, AnalysisResult.analysis_task_id == AnalysisTask.id)
         .where(
             AnalysisResult.workspace_id == workspace_id,
+            AnalysisTask.workspace_id == workspace_id,
             AnalysisResult.id.in_(result_ids),
             AnalysisResult.status.in_(REPORTABLE_ANALYSIS_RESULT_STATUSES),
         )

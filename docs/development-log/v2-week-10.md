@@ -141,3 +141,27 @@ curl -fsS http://127.0.0.1:18080/api/v1/health
 - The validation uses the isolated Compose project
   `enterprise-rag-v2-docker-upgrade-validation` and frontend port `18081`.
 - The script removes its isolated containers and volumes by default after validation.
+
+## Day 67 - Final Cross-Workspace Isolation Regression Tests
+
+### Completed
+
+- Added a focused cross-workspace isolation regression suite for high-risk query paths.
+- Verified knowledge-base list and detail queries bind the requested Workspace boundary.
+- Verified vector and keyword retrieval queries require both `workspace_id` and
+  `knowledge_base_id`.
+- Verified review queue queries bind both `analysis_results.workspace_id` and
+  `analysis_tasks.workspace_id`.
+- Hardened report source validation so report sections and exports only accept approved or edited
+  analysis results whose result row and task row both belong to the same Workspace.
+- Verified export job lookup is scoped by Workspace.
+
+### Verification Results
+
+```bash
+.venv/bin/pytest backend/tests/test_cross_workspace_isolation_regression.py \
+  backend/tests/test_report_services.py -q
+```
+
+- Cross-workspace isolation regression tests passed.
+- Report service tests passed after adding the stricter task Workspace filter.
