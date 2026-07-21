@@ -226,3 +226,41 @@ rg -n "v2.0.0|2.0.0|release-v2.0.0" CHANGELOG.md docs/release-v2.0.0.md README.m
 - Changelog includes a `2.0.0` section dated `2026-07-21`.
 - Release notes include the final verification matrix and GitHub Release body.
 - README links to `docs/release-v2.0.0.md`.
+
+## Day 70 - v2.0.0 Release Candidate Preparation
+
+### Completed
+
+- Bumped the backend package version, frontend package version, and FastAPI OpenAPI version to
+  `2.0.0`.
+- Updated the README Week 10 acceptance status so the GitHub homepage reflects the v2.0.0 release
+  candidate state.
+- Marked final post-version-bump validation as complete in the v2.0.0 release checklist.
+- Re-ran the final backend, frontend, and Docker v1-to-v2 upgrade checks after the version bump.
+- Prepared the branch for the final release-prep commit and later `v2.0.0` tag creation.
+
+### Verification Results
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/mypy backend
+.venv/bin/pytest -q
+cd frontend && pnpm typecheck && pnpm build
+git diff --check
+.venv/bin/python scripts/validate_docker_v1_upgrade.py --yes --json
+```
+
+- Ruff passed.
+- mypy passed with no issues across 140 backend source files.
+- Backend tests passed: 458 passed, 1 skipped, 1 warning.
+- Frontend typecheck and production build passed.
+- `git diff --check` passed.
+- Docker v1-to-v2 upgrade validation passed from revision `0010` to `0024`, preserved seeded v1
+  users, knowledge base, member, document, chunk, conversation, and message rows, seeded 4
+  workspace templates, and verified zero null `workspace_id` counts for knowledge bases,
+  documents, chunks, and conversations.
+
+### Notes
+
+- The `v2.0.0` tag and GitHub Release should be created only after the release-prep commit is
+  pushed and the chosen release source branch is confirmed.

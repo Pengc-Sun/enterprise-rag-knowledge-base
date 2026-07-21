@@ -2,7 +2,7 @@
 
 Enterprise RAG Knowledge Base is a full-stack Retrieval-Augmented Generation system for private enterprise documents. It supports authenticated users, workspace-based projects, template-created knowledge structures, document ingestion, hybrid retrieval, reranking, multi-turn chat, structured AI analysis, human review, source-cited report generation, Markdown/DOCX/PDF exports, Docker deployment, and GitHub Actions CI.
 
-The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete and the repository is ready for GitHub release tagging, repository topics, and CV/interview use. A v2.0 workspace upgrade is now being developed on `feature/v2-workspaces`; the stable v1.0 line remains on `main`.
+The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete on `main`, and the v2.0 workspace upgrade is prepared as a release candidate on `feature/v2-workspaces`.
 
 ## Overview
 
@@ -648,6 +648,8 @@ Week 4 through Week 10 completion summaries are included below in the acceptance
 - Final cross-workspace isolation regressions cover knowledge bases, retrieval, review queue, report source validation, and export lookup.
 - Report source validation now requires both the analysis result and its analysis task to belong to the same workspace.
 - Release documentation was refreshed across README, architecture, API, deployment, security, and screenshot docs.
+- Package, frontend, and OpenAPI version constants are set to `2.0.0` for the release candidate.
+- Final release-candidate validation passed after the version bump, including backend checks, frontend typecheck/build, `git diff --check`, and Docker v1-to-v2 upgrade validation.
 
 ## CI
 

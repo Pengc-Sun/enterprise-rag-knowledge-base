@@ -61,7 +61,6 @@ All notable changes to this project are documented in this file.
 ### Known limitations
 
 - The stable v1.0 line remains on `main` until the v2.0 branch or PR is approved and merged.
-- Package, frontend, and OpenAPI version constants must be bumped to `2.0.0` before tagging.
 - Deterministic providers remain the default for reproducible local development and CI; real
   production use should configure external embedding and LLM providers.
 - Production-style Docker Compose remains a small single-host deployment reference, not a complete

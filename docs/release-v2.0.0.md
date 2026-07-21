@@ -115,15 +115,13 @@ Workspace-based AI analysis platform release for enterprise RAG workflows.
   platform.
 ```
 
-## Pre-Tag Version Bump
+## Version Bump
 
-Run before tagging v2.0.0:
+Completed before tagging v2.0.0:
 
-```bash
-# update version = "2.0.0" in pyproject.toml
-# update "version": "2.0.0" in frontend/package.json
-# update FastAPI version="2.0.0" in backend/app/main.py
-```
+- `pyproject.toml`: `version = "2.0.0"`
+- `frontend/package.json`: `"version": "2.0.0"`
+- `backend/app/main.py`: `version="2.0.0"`
 
 ## Tagging Commands
 
@@ -185,8 +183,8 @@ document-ai
 - [x] Refresh README, architecture, API, deployment, security, and screenshot docs.
 - [x] Update changelog.
 - [x] Prepare release notes.
-- [ ] Bump package, frontend, and OpenAPI versions to `2.0.0`.
-- [ ] Run final validation after the version bump.
+- [x] Bump package, frontend, and OpenAPI versions to `2.0.0`.
+- [x] Run final validation after the version bump.
 - [ ] Commit release prep changes.
 - [ ] Push `feature/v2-workspaces`.
 - [ ] Open or update the v2 pull request into `main`.
