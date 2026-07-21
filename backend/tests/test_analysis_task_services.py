@@ -655,7 +655,7 @@ def test_build_structured_analysis_messages_requires_json_and_includes_context()
     workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     task = make_task(workspace_id)
-    task.output_schema = {"type": "object", "required": ["summary", "findings"]}
+    task.output_schema = {"type": "object", "required": ["requirements", "citations"]}
     chunk = make_chunk(workspace_id, knowledge_base_id)
 
     messages = build_structured_analysis_messages(task, [chunk])
@@ -663,15 +663,27 @@ def test_build_structured_analysis_messages_requires_json_and_includes_context()
     assert [message.role for message in messages] == ["system", "user"]
     assert "Return only valid JSON" in messages[0].content
     assert "Markdown fences" in messages[0].content
+    assert "Use the exact top-level keys required by that schema" in messages[0].content
+    assert "summary" not in messages[0].content
+    assert "findings" not in messages[0].content
     assert str(chunk.id) in messages[1].content
     assert "Expected output schema" in messages[1].content
-    assert '"required": ["summary", "findings"]' in messages[1].content
+    assert '"required": ["requirements", "citations"]' in messages[1].content
+    assert "validates against the expected output schema" in messages[1].content
 
 
 def test_parse_structured_analysis_response_returns_json_object() -> None:
     payload = {"summary": "ok", "findings": [], "citations": [], "confidence": 0.7}
 
     parsed = parse_structured_analysis_response(json.dumps(payload))
+
+    assert parsed == payload
+
+
+def test_parse_structured_analysis_response_accepts_json_markdown_fence() -> None:
+    payload = {"summary": "ok", "findings": [], "citations": []}
+
+    parsed = parse_structured_analysis_response(f"```json\n{json.dumps(payload)}\n```")
 
     assert parsed == payload
 

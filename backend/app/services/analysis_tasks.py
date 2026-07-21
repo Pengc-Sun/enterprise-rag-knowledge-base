@@ -44,11 +44,8 @@ STRUCTURED_ANALYSIS_SYSTEM_PROMPT = """\
 You are an enterprise document analysis engine.
 Return only valid JSON. Do not include Markdown fences, prose, or comments.
 The response must conform to the expected output schema supplied by the user.
-The JSON object must include:
-- summary: string
-- findings: array of structured finding objects
-- citations: array of citation objects referencing provided chunk_id values
-- confidence: number between 0 and 1, or null
+Use the exact top-level keys required by that schema.
+Every citation value must reference a provided chunk_id.
 """
 DEFAULT_REVIEW_QUEUE_STATUSES = frozenset(
     {
@@ -456,6 +453,8 @@ def build_structured_analysis_user_prompt(
             f"Expected output schema: {output_schema}",
             "",
             "Use only the workspace context below.",
+            "Return a single JSON object that validates against the expected output schema.",
+            "Do not add keys that conflict with the expected output schema.",
             "Every finding, requirement, risk, row, procedure, or priority item must include a "
             "non-empty citations array.",
             "Every citation must reference one of the provided chunk_id values.",
@@ -482,6 +481,7 @@ def build_analysis_context_block(chunk: DocumentChunk) -> str:
 
 
 def parse_structured_analysis_response(content: str) -> dict[str, object]:
+    content = strip_json_markdown_fence(content.strip())
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -490,6 +490,20 @@ def parse_structured_analysis_response(content: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise LLMProviderResponseError
     return parsed
+
+
+def strip_json_markdown_fence(content: str) -> str:
+    if not content.startswith("```"):
+        return content
+
+    lines = content.splitlines()
+    if len(lines) < 3 or not lines[-1].strip().startswith("```"):
+        return content
+
+    opening = lines[0].strip().lower()
+    if opening not in {"```", "```json"}:
+        return content
+    return "\n".join(lines[1:-1]).strip()
 
 
 def validate_structured_analysis_result(
