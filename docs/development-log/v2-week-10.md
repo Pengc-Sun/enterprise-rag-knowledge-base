@@ -165,3 +165,41 @@ curl -fsS http://127.0.0.1:18080/api/v1/health
 
 - Cross-workspace isolation regression tests passed.
 - Report service tests passed after adding the stricter task Workspace filter.
+
+## Day 68 - Release Documentation Refresh
+
+### Completed
+
+- Refreshed the README project positioning so the GitHub homepage describes the v2 workspace-based
+  product, not only the v1 knowledge-base chat workflow.
+- Added v2 Week 10 progress and acceptance status to the README.
+- Added `docs/development-log/v2-week-10.md` to the README development-log index.
+- Added a v2 workspace workflow SVG asset for GitHub display.
+- Updated screenshot documentation to distinguish original v1 RAG assets from the v2 workspace
+  workflow asset.
+- Updated architecture documentation with current frontend scope, report source isolation rules,
+  Docker fresh-install validation, and Docker v1-to-v2 upgrade validation.
+- Updated API documentation for current report preview, editing, ordering, export, download, and
+  same-workspace analysis result/task source rules.
+- Updated deployment documentation with repeatable fresh Docker install and v1-to-v2 Docker upgrade
+  validation commands.
+- Updated security documentation with final workspace isolation, review queue, report source, and
+  export access boundaries.
+
+### Verification Results
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+from xml.etree import ElementTree as ET
+ET.parse(Path('docs/screenshots/v2-workspace-workflow.svg'))
+print('svg ok')
+PY
+
+rg -n "later report workflow|Week 4 through Week 8|Week 4 through Week 9" \
+  README.md docs/architecture.md docs/api.md docs/deployment.md docs/security.md \
+  docs/screenshots/README.md
+```
+
+- SVG syntax validation passed.
+- No stale report workflow wording or old README week-summary wording remained in product docs.

@@ -66,6 +66,11 @@ Endpoint behavior:
 - Review queue listing and review decision creation require workspace owner, admin, or reviewer.
 - Report and report section reads require workspace read access.
 - Report and report section creation require workspace owner or admin.
+- Report section source IDs and export-time source checks require same-workspace `approved` or
+  reviewer-`edited` analysis results. The associated analysis task must also belong to the same
+  workspace.
+- Report export creation requires workspace owner or admin. Export metadata and file downloads
+  require workspace read access.
 - Workspace creation, workspace updates, member changes, directory changes, document write actions,
   and successful review decisions create database audit log records.
 - RAG query, retrieval debug, conversations, and chat require workspace read access.
@@ -109,6 +114,9 @@ Isolation is enforced at the API, service, and query layers:
 - Retrieval queries are scoped to both `workspace_id` and `knowledge_base_id`.
 - Retrieval cannot return chunks from another workspace.
 - Metadata filters are applied inside retrieval query builders.
+- Review queue queries filter both analysis results and joined analysis tasks by workspace.
+- Report source validation filters both analysis results and joined analysis tasks by workspace.
+- Export jobs are resolved by workspace before metadata or stored files are returned.
 - Cross-workspace access returns `404` before lower-level document reads, retrieval, chat, or LLM calls.
 
 ## Error Handling

@@ -1,18 +1,20 @@
 # Enterprise RAG Knowledge Base
 
-Enterprise RAG Knowledge Base is a full-stack Retrieval-Augmented Generation system for private enterprise documents. It supports authenticated users, multiple knowledge bases, document ingestion, hybrid retrieval, reranking, multi-turn chat, streaming answers, source citations, evaluation tooling, Docker deployment, and GitHub Actions CI.
+Enterprise RAG Knowledge Base is a full-stack Retrieval-Augmented Generation system for private enterprise documents. It supports authenticated users, workspace-based projects, template-created knowledge structures, document ingestion, hybrid retrieval, reranking, multi-turn chat, structured AI analysis, human review, source-cited report generation, Markdown/DOCX/PDF exports, Docker deployment, and GitHub Actions CI.
 
 The project follows the 8-week development roadmap in `docs/development-roadmap.md`. Current status: v1.0.0 release preparation is complete and the repository is ready for GitHub release tagging, repository topics, and CV/interview use. A v2.0 workspace upgrade is now being developed on `feature/v2-workspaces`; the stable v1.0 line remains on `main`.
 
 ## Overview
 
-The system lets a user create a knowledge base, upload enterprise documents, process them into searchable chunks, and ask grounded questions through a chat interface. Answers are generated from retrieved context and include source references so users can inspect where the response came from.
+The system lets a user create a workspace, select a template, upload enterprise documents into workspace-scoped knowledge bases, process them into searchable chunks, ask grounded questions, run structured AI analysis tasks, review AI conclusions, and export formal reports. Answers and analysis results are generated from retrieved context and include source references so users can inspect where the response came from.
 
 The default local providers are deterministic, which keeps development, tests, and demos reproducible without requiring external LLM or embedding API keys. Production-style settings can point the embedding, reranker, and LLM provider abstractions at external services.
 
 ## Key Features
 
 - User registration, login, JWT authentication, and protected routes.
+- Workspace CRUD, workspace membership roles, and workspace-scoped authorization.
+- Built-in workspace templates that create directories, default knowledge bases, analysis tasks, and report outlines.
 - Knowledge base CRUD with owner/editor/viewer permission checks.
 - PDF, DOCX, TXT, and Markdown upload support.
 - File validation by extension, MIME type, size, sanitized filename, and SHA-256 duplicate detection.
@@ -21,7 +23,10 @@ The default local providers are deterministic, which keeps development, tests, a
 - Vector retrieval, PostgreSQL full-text search, hybrid retrieval, Reciprocal Rank Fusion, and reranking.
 - Metadata filters for document IDs, file types, date ranges, departments, and permissions.
 - RAG query endpoint, retrieval debug endpoint, conversation persistence, and Server-Sent Events streaming chat.
-- React frontend for auth, knowledge bases, document management, conversations, streaming chat, and citation details.
+- Structured AI analysis tasks with schema validation, normalized citations, and provider failure handling.
+- Reviewer workflow for approving, editing, rejecting, or requesting changes to AI results.
+- Workspace-scoped report builder with approved-content gating, Markdown preview, and Markdown/DOCX/PDF exports.
+- React frontend for auth, workspaces, templates, knowledge bases, document management, conversations, streaming chat, analysis, review, reports, exports, and citation details.
 - Structured JSON logs, request IDs, unified API errors, retry/timeout/rate-limit handling, and evaluation scripts.
 - Docker Compose development stack, production-style Compose stack, Nginx frontend serving, and GitHub Actions CI.
 
@@ -40,7 +45,8 @@ PostgreSQL + pgvector
         |
         +-- document metadata
         +-- chunks and embeddings
-        +-- users, permissions, conversations, messages
+        +-- users, workspaces, permissions, conversations, messages
+        +-- analysis tasks/results, review decisions, reports, exports
 
 FastAPI also coordinates:
         +-- Redis cache/service dependency
@@ -67,6 +73,9 @@ Production-style Docker Compose runs PostgreSQL, Redis, Alembic migration, FastA
 10. The reranker reorders candidates and the prompt builder selects final context.
 11. The LLM provider generates an answer grounded in the retrieved chunks.
 12. The response returns answer text, source citations, scores, and request metadata.
+13. Workspace templates can also create structured analysis tasks.
+14. Analysis results are reviewed before formal reports can reference them.
+15. Approved report content can be exported as Markdown, DOCX, or PDF.
 
 ## Technology Stack
 
@@ -102,13 +111,13 @@ docker-compose.prod.yml  Production-style Docker Compose stack
 
 ## Detailed Documentation
 
-- `docs/architecture.md`: system architecture, data model, request flow, and RAG pipeline.
-- `docs/api.md`: API endpoints, response envelope, authentication, permissions, and examples.
-- `docs/deployment.md`: local development, Docker Compose, migrations, production-style startup order, and CI.
+- `docs/architecture.md`: system architecture, workspace model, request flow, RAG pipeline, review workflow, and report exports.
+- `docs/api.md`: API endpoints, response envelope, authentication, workspace permissions, analysis/review/report APIs, and examples.
+- `docs/deployment.md`: local development, Docker Compose, migrations, fresh-install and v1-to-v2 upgrade validation, production-style startup order, and CI.
 - `docs/evaluation.md`: RAG evaluation dataset, prediction format, retrieval metrics, and debug workflow.
 - `docs/security.md`: authentication, authorization, upload controls, secrets, logging, and hardening checklist.
 - `docs/demo-data/`: synthetic Markdown documents for the Day 54 local demo flow.
-- `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display.
+- `docs/screenshots/`: SVG diagrams and page snapshots for GitHub display, including v2 workspace workflow documentation assets.
 - `docs/demo-video.md`: 2-3 minute demonstration script, recording flow, narration, and checklist.
 - `CHANGELOG.md`: v1.0.0 changelog and verification summary.
 - `docs/release-v1.0.0.md`: GitHub release notes, tag commands, topics, and release checklist.
@@ -356,6 +365,7 @@ Day 54 adds documentation-ready SVG snapshots and diagrams under `docs/screensho
 | Upload page | <img src="docs/screenshots/upload-page.svg" width="420" alt="Upload page"> |
 | Chat page | <img src="docs/screenshots/chat-page.svg" width="420" alt="Chat page"> |
 | Citation display | <img src="docs/screenshots/citation-display.svg" width="420" alt="Citation display"> |
+| v2 workspace workflow | <img src="docs/screenshots/v2-workspace-workflow.svg" width="420" alt="v2 workspace workflow"> |
 | Swagger page | <img src="docs/screenshots/swagger-page.svg" width="420" alt="Swagger page"> |
 | GitHub Actions page | <img src="docs/screenshots/github-actions-page.svg" width="420" alt="GitHub Actions page"> |
 | Evaluation results | <img src="docs/screenshots/evaluation-results.svg" width="420" alt="Evaluation results"> |
@@ -412,6 +422,7 @@ v2.0 upgrade progress:
 - Week 7: workspace-scoped report builder, approved-content report sections, Markdown preview, section ordering, and approved-only report workflow tests.
 - Week 8: Markdown, DOCX, and PDF exports, export storage/downloads, export-time approved-content gating, workspace dashboard metrics, and export storage persistence documentation.
 - Week 9: React workspace experience, workspace list/create/template selection, workspace dashboard navigation, workspace-scoped knowledge-base/document/chat routes, analysis task runner, review queue UI, report builder, exports UI, and frontend regression validation.
+- Week 10: release hardening, full backend/frontend/migration/Docker checks, fresh Docker install validation, Docker v1-to-v2 upgrade validation, final cross-workspace isolation regressions, and release documentation refresh.
 
 ## Development Logs
 
@@ -427,8 +438,9 @@ v2.0 upgrade progress:
 - `docs/development-log/v2-week-7.md`
 - `docs/development-log/v2-week-8.md`
 - `docs/development-log/v2-week-9.md`
+- `docs/development-log/v2-week-10.md`
 
-Week 4 through Week 8 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
+Week 4 through Week 10 completion summaries are included below in the acceptance status sections. v2.0 weekly upgrade summaries are added as each upgrade week closes.
 
 ## Week 1 Acceptance Status
 
@@ -626,6 +638,15 @@ Week 4 through Week 8 completion summaries are included below in the acceptance 
 - Report builder UI supports report creation, section editing, generating sections from approved or edited analysis results, preview, and Markdown/DOCX/PDF export creation.
 - Exports UI supports recent export lookup, export ID lookup, and file download.
 - Week 9 close-out verification passed with frontend typecheck, frontend production build, Vite SPA route smoke tests, backend pytest, Ruff, mypy, and `git diff --check`.
+
+## v2.0 Week 10 Acceptance Status
+
+- Full backend, frontend, migration, and Docker checks were run on the v2 branch.
+- Production Docker fresh install from empty volumes was validated through frontend/backend health checks, Alembic revision `0024`, seeded templates, and a register/login/template workspace smoke test.
+- Docker v1-to-v2 upgrade validation now seeds a v1-style database at revision `0010`, runs the production migrate service, upgrades to `0024`, and verifies users, knowledge bases, documents, chunks, conversations, messages, workspace backfill, and template seed data.
+- Final cross-workspace isolation regressions cover knowledge bases, retrieval, review queue, report source validation, and export lookup.
+- Report source validation now requires both the analysis result and its analysis task to belong to the same workspace.
+- Release documentation was refreshed across README, architecture, API, deployment, security, and screenshot docs.
 
 ## CI
 

@@ -173,6 +173,34 @@ Validate the real Docker migrate service against an isolated fresh database:
 make validate-docker-migration-startup
 ```
 
+Validate a complete fresh production-style install from empty Docker volumes:
+
+```bash
+FRONTEND_PORT=18080 APP_ENV_FILE=.env.production.example docker compose \
+  --env-file .env.production.example \
+  -p enterprise-rag-v2-day65-fresh \
+  -f docker-compose.prod.yml up -d --build
+
+curl -fsS http://127.0.0.1:18080/health
+curl -fsS http://127.0.0.1:18080/api/v1/health
+
+FRONTEND_PORT=18080 APP_ENV_FILE=.env.production.example docker compose \
+  --env-file .env.production.example \
+  -p enterprise-rag-v2-day65-fresh \
+  -f docker-compose.prod.yml down -v --remove-orphans
+```
+
+Validate a Docker v1-to-v2 upgrade path from a seeded v1 database snapshot:
+
+```bash
+.venv/bin/python scripts/validate_docker_v1_upgrade.py --yes --json
+```
+
+The upgrade validation uses an isolated Compose project, seeds v1-style users, knowledge base,
+member, document, chunk, conversation, and message rows at revision `0010`, runs the production
+`migrate` service, verifies revision `0024`, starts backend/frontend health checks, validates
+workspace backfill, and removes its isolated containers and volumes by default.
+
 Build and start:
 
 ```bash
@@ -314,6 +342,8 @@ Before sharing or deploying:
 - Confirm GitHub Actions passes.
 - Confirm upload and export storage volumes are persistent.
 - Confirm `UPLOAD_DIR` and `EXPORT_DIR` resolve under the mounted `/app/storage` path.
+- Validate a fresh Docker install from empty volumes.
+- Validate the Docker v1-to-v2 upgrade path with `scripts/validate_docker_v1_upgrade.py`.
 - Confirm provider API keys, model names, base URLs, and embedding dimensions are configured if deterministic providers are not used.
 
 ## Current Deployment Scope

@@ -67,7 +67,8 @@ frontend/src/App.tsx                  Application routes
 frontend/src/api/                     API client modules and shared types
 frontend/src/auth/AuthContext.tsx     Token state and auth helpers
 frontend/src/components/              Shared route protection component
-frontend/src/pages/                   Login, register, dashboard, documents, chat pages
+frontend/src/pages/                   Login, register, workspace, document, chat, analysis,
+                                      review, report, and export pages
 frontend/src/styles.css               Application styling
 ```
 
@@ -91,7 +92,7 @@ Main entities:
 - `AnalysisResult`: structured AI output, normalized citations, confidence, provider metadata, and review status.
 - `ReviewDecision`: reviewer approve, edit, reject, or request-changes action with original and edited result snapshots.
 - `Report`: workspace-scoped formal report container with draft, ready, or exported status.
-- `ReportSection`: ordered report content block with markdown body, template key, source task keys, and source result IDs. Sections can only reference `approved` or reviewer-`edited` analysis results.
+- `ReportSection`: ordered report content block with markdown body, template key, source task keys, and source result IDs. Sections can only reference `approved` or reviewer-`edited` analysis results whose result row and task row both belong to the same workspace.
 - `ExportJob`: workspace-scoped report export tracking row with format, status, optional file path,
   optional error message, creator, and metadata. Markdown, DOCX, and PDF exports are written to
   configured export storage and exposed through an access-controlled download endpoint.
@@ -155,6 +156,12 @@ Workspace isolation is enforced across the v2.0 backend surface:
 - Conversations are looked up by `(workspace_id, knowledge_base_id, conversation_id, user_id)`.
 - Retrieval query builders filter `document_chunks` by both `workspace_id` and
   `knowledge_base_id`.
+- Review queue queries require both the `analysis_results` row and joined `analysis_tasks` row to
+  match the requested workspace.
+- Report section source validation requires both the `analysis_results` row and joined
+  `analysis_tasks` row to match the requested workspace before a source can be used in a report or
+  export.
+- Export jobs are looked up by `(workspace_id, export_id)` before metadata or files are returned.
 - RAG query and retrieval debug endpoints validate workspace membership before provider calls.
 - Cross-workspace access returns `404` before document reads, retrieval, chat, stream, or LLM
   execution.
@@ -241,6 +248,15 @@ Production-style Compose starts:
 - `backend` after database, Redis, and migration readiness
 - `frontend` Nginx container after backend health is ready
 
+Release hardening includes two Docker validation paths:
+
+- Fresh install validation starts the production stack from empty PostgreSQL, Redis, and storage
+  volumes, verifies migration to Alembic revision `0024`, confirms built-in template seeding, and
+  runs a register/login/template Workspace smoke test.
+- v1-to-v2 upgrade validation creates an isolated database at the v1 schema revision `0010`, seeds
+  v1-style users, knowledge base, documents, chunks, conversation, and message rows, runs the
+  production `migrate` service, and verifies upgrade to revision `0024` without data loss.
+
 ## Observability
 
 The current observability layer includes:
@@ -250,6 +266,7 @@ The current observability layer includes:
 - Structured RAG query logs.
 - Unified error responses with request IDs.
 - Health checks for application and database connectivity.
+- Docker fresh-install and v1-to-v2 upgrade validation scripts for release candidates.
 
 ## Current Constraints
 

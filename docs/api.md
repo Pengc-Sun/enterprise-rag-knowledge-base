@@ -818,8 +818,9 @@ edit. Successful review decisions also create an `AuditLog` record with action
 
 Report endpoints are workspace-scoped and require authentication. Reports start as drafts. Draft
 sections can be created manually or generated from approved reviewer content. Any section
-`source_result_ids` must point to same-workspace analysis results with status `approved` or `edited`;
-later report workflow days add preview, editing, ordering, and exports.
+`source_result_ids` must point to analysis results with status `approved` or `edited`; both the
+analysis result row and its joined analysis task row must belong to the same workspace. The report
+workflow supports preview, editing, ordering, export creation, export lookup, and file download.
 
 ### List reports
 
@@ -900,8 +901,9 @@ Requires workspace owner or admin. Markdown, DOCX, and PDF export jobs are marke
 immediately. Every export writes a file under the configured export storage directory and records the
 path in `file_path`. Markdown exports also store rendered Markdown in export metadata. DOCX and PDF
 exports also store base64 encoded file payloads in export metadata for API inspection.
-Before writing the export file, the backend revalidates every referenced analysis result; exports
-are rejected if any report section references a result that is no longer `approved` or `edited`.
+Before writing the export file, the backend revalidates every referenced analysis result and its
+analysis task workspace. Exports are rejected if any report section references a result that is no
+longer `approved` or `edited`, or a result/task pair outside the current workspace.
 
 Request body:
 
@@ -991,8 +993,8 @@ POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections
 ```
 
 Requires workspace owner or admin. New sections are created as `draft`. If `source_result_ids` are
-provided, every referenced analysis result must belong to the same workspace and be `approved` or
-`edited`.
+provided, every referenced analysis result and its analysis task must belong to the same workspace
+and be `approved` or `edited`.
 
 Request body:
 
@@ -1013,9 +1015,9 @@ Request body:
 POST /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/generate
 ```
 
-Requires workspace owner or admin. The generation source list must contain analysis results from the
-same workspace with status `approved` or `edited`. The endpoint creates a draft report section with
-Markdown content, source task keys, and source result IDs.
+Requires workspace owner or admin. The generation source list must contain analysis results and
+analysis tasks from the same workspace with status `approved` or `edited`. The endpoint creates a
+draft report section with Markdown content, source task keys, and source result IDs.
 
 Request body:
 
@@ -1061,8 +1063,8 @@ PATCH /api/v1/workspaces/{workspace_id}/reports/{report_id}/sections/{section_id
 
 Requires workspace owner or admin. Supports partial updates to `template_section_key`, `title`,
 `body_markdown`, `source_task_keys`, `source_result_ids`, and `sort_order`. If `source_result_ids`
-are provided, every referenced analysis result must belong to the same workspace and be `approved`
-or `edited`.
+are provided, every referenced analysis result and its analysis task must belong to the same
+workspace and be `approved` or `edited`.
 
 Request body:
 
@@ -1097,7 +1099,9 @@ Requires workspace read access.
 | Create review decision | workspace owner, admin, reviewer |
 | List/read reports and sections | workspace owner, admin, editor, reviewer, viewer |
 | Create reports and sections | workspace owner or admin |
+| Create report exports | workspace owner or admin |
+| Read/download report exports | workspace owner, admin, editor, reviewer, viewer |
 
 ## API Testing
 
-Backend API behavior is covered by tests under `backend/tests/`, including auth, knowledge bases, documents, RAG queries, conversations, streaming, analysis tasks, review decisions, unified errors, and end-to-end flows.
+Backend API behavior is covered by tests under `backend/tests/`, including auth, knowledge bases, documents, RAG queries, conversations, streaming, analysis tasks, review decisions, report exports, cross-workspace isolation regressions, unified errors, and end-to-end flows.
