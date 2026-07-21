@@ -670,6 +670,8 @@ def test_build_structured_analysis_messages_requires_json_and_includes_context()
     assert "Expected output schema" in messages[1].content
     assert '"required": ["requirements", "citations"]' in messages[1].content
     assert "validates against the expected output schema" in messages[1].content
+    assert "at most 5 highest priority items" in messages[1].content
+    assert "1 or 2 citations" in messages[1].content
 
 
 def test_parse_structured_analysis_response_returns_json_object() -> None:
@@ -792,7 +794,7 @@ async def test_execute_analysis_task_retrieves_workspace_chunks_and_creates_resu
     assert session.refreshed is result
 
 
-def test_normalize_structured_analysis_output_requires_each_finding_citation() -> None:
+def test_normalize_structured_analysis_output_uses_top_level_citations_for_findings() -> None:
     workspace_id = uuid.uuid4()
     knowledge_base_id = uuid.uuid4()
     chunk = make_chunk(workspace_id, knowledge_base_id)
@@ -801,8 +803,24 @@ def test_normalize_structured_analysis_output_requires_each_finding_citation() -
         "citations": [{"chunk_id": str(chunk.id)}],
     }
 
+    normalized_result, normalized_citations = normalize_structured_analysis_output(
+        structured_result,
+        [chunk],
+    )
+
+    findings = cast(list[dict[str, object]], normalized_result["findings"])
+    finding_citations = cast(list[dict[str, object]], findings[0]["citations"])
+    assert finding_citations[0]["chunk_id"] == str(chunk.id)
+    assert normalized_citations[0]["chunk_id"] == str(chunk.id)
+
+
+def test_normalize_structured_analysis_output_requires_some_citation() -> None:
+    structured_result: dict[str, object] = {
+        "findings": [{"claim": "Hotel receipt required."}],
+    }
+
     with pytest.raises(AnalysisCitationValidationError):
-        normalize_structured_analysis_output(structured_result, [chunk])
+        normalize_structured_analysis_output(structured_result, [])
 
 
 def test_normalize_structured_analysis_output_persists_normalized_citations() -> None:
@@ -973,7 +991,7 @@ async def test_execute_analysis_task_rejects_uncited_findings_without_result() -
     response_payload = {
         "summary": "Hotel receipts are required.",
         "findings": [{"title": "Receipt required"}],
-        "citations": [{"chunk_id": str(chunk.id)}],
+        "citations": [],
         "confidence": 0.82,
     }
     llm_provider = FakeStructuredLLMProvider(json.dumps(response_payload))

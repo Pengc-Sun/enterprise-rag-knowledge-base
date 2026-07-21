@@ -455,9 +455,12 @@ def build_structured_analysis_user_prompt(
             "Use only the workspace context below.",
             "Return a single JSON object that validates against the expected output schema.",
             "Do not add keys that conflict with the expected output schema.",
+            "Keep the response concise. For each top-level result array, return at most 5 highest "
+            "priority items.",
             "Every finding, requirement, risk, row, procedure, or priority item must include a "
             "non-empty citations array.",
-            "Every citation must reference one of the provided chunk_id values.",
+            "Each item should include 1 or 2 citations. Every citation must reference one of the "
+            "provided chunk_id values.",
             "",
             "Workspace context:",
             context,
@@ -656,11 +659,18 @@ def normalize_structured_analysis_output(
         chunk_map,
         citation_store,
     )
+    top_level_citations = normalized_result.get("citations")
+    fallback_citations = (
+        deepcopy(top_level_citations)
+        if isinstance(top_level_citations, list) and top_level_citations
+        else None
+    )
     finding_count = normalize_finding_citations(
         normalized_result,
         chunk_map,
         citation_store,
         "$",
+        fallback_citations=fallback_citations,
     )
     string_conclusion_count = count_string_conclusion_arrays(normalized_result)
 
@@ -705,6 +715,7 @@ def normalize_finding_citations(
     path: str,
     *,
     list_key: str | None = None,
+    fallback_citations: list[object] | None = None,
 ) -> int:
     if isinstance(value, dict):
         finding_count = 0
@@ -718,6 +729,7 @@ def normalize_finding_citations(
                 citation_store,
                 item_path,
                 list_key=key,
+                fallback_citations=fallback_citations,
             )
         return finding_count
 
@@ -732,6 +744,7 @@ def normalize_finding_citations(
                         chunk_map,
                         citation_store,
                         item_path,
+                        fallback_citations=fallback_citations,
                     )
                     finding_count += 1
                 finding_count += normalize_finding_citations(
@@ -739,6 +752,7 @@ def normalize_finding_citations(
                     chunk_map,
                     citation_store,
                     item_path,
+                    fallback_citations=fallback_citations,
                 )
             elif isinstance(item, list):
                 finding_count += normalize_finding_citations(
@@ -747,6 +761,7 @@ def normalize_finding_citations(
                     citation_store,
                     item_path,
                     list_key=list_key,
+                    fallback_citations=fallback_citations,
                 )
         return finding_count
 
@@ -758,8 +773,12 @@ def normalize_required_finding_citations(
     chunk_map: dict[str, DocumentChunk],
     citation_store: dict[tuple[str, str | None], dict[str, object]],
     path: str,
+    *,
+    fallback_citations: list[object] | None = None,
 ) -> list[dict[str, object]]:
     citations = finding.get("citations")
+    if citations is None and fallback_citations is not None:
+        citations = fallback_citations
     if not isinstance(citations, list) or not citations:
         raise AnalysisCitationValidationError(f"{path}.citations is required")
     return normalize_citation_list(citations, chunk_map, citation_store, f"{path}.citations")
