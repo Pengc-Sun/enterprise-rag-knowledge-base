@@ -147,7 +147,8 @@ async def create_workspace(
         )
     )
     if template is not None:
-        instantiate_workspace_directories_from_template(workspace, template)
+        for directory in instantiate_workspace_directories_from_template(workspace, template):
+            session.add(directory)
         for knowledge_base in instantiate_workspace_knowledge_bases_from_template(
             workspace,
             owner_id,

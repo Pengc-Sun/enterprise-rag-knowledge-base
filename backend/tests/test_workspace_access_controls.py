@@ -318,6 +318,9 @@ async def test_create_workspace_instantiates_directories_from_template() -> None
     )
 
     directory_paths = {directory.path for directory in workspace.directories}
+    persisted_directories = [
+        item for item in session.added if isinstance(item, WorkspaceDirectory)
+    ]
     knowledge_bases = [item for item in session.added if isinstance(item, KnowledgeBase)]
     analysis_tasks = [item for item in session.added if isinstance(item, AnalysisTask)]
     reports = [item for item in session.added if isinstance(item, Report)]
@@ -330,6 +333,8 @@ async def test_create_workspace_instantiates_directories_from_template() -> None
 
     assert workspace.template_id == template.id
     assert directory_paths == {"policies", "evidence"}
+    assert {directory.path for directory in persisted_directories} == {"policies", "evidence"}
+    assert {directory.workspace for directory in persisted_directories} == {workspace}
     assert {knowledge_base.name for knowledge_base in knowledge_bases} == {"Policies", "Evidence"}
     assert {knowledge_base.workspace_id for knowledge_base in knowledge_bases} == {workspace.id}
     assert {knowledge_base.owner_id for knowledge_base in knowledge_bases} == {owner.id}
